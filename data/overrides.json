@@ -1,0 +1,5 @@
+{
+  "_hinweis": "Manuell gepflegt. restricted = rot (nicht regulär bereisbar: Einreise faktisch unmöglich, Krieg, Reisewarnung des Auswärtigen Amts). byPassport = Korrekturen, falls die Online-Quelle veraltet ist (Pass -> Ziel -> eta | e-visa | visa required | visa on arrival | visa free). Stand der Liste: Nov 2026, nach bestem Wissen, bitte selbst prüfen.",
+  "restricted": ["KP","RU","BY","UA","AF","SY","YE","SO","SS","LY","SD","IR","IQ"],
+  "byPassport": { "DE": { "GB": "eta" } }
+}

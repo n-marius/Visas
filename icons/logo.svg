@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e6eaf1"/></linearGradient>
+<linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#d9bf86"/><stop offset="1" stop-color="#a98445"/></linearGradient>
+<clipPath id="g"><circle cx="512" cy="512" r="262"/></clipPath>
+</defs>
+<rect width="1024" height="1024" fill="url(#bg)"/>
+<circle cx="512" cy="512" r="262" fill="#fff" stroke="#1f2a44" stroke-width="22"/>
+<g clip-path="url(#g)" fill="none" stroke="#1f2a44" stroke-width="12" opacity=".78">
+<ellipse cx="512" cy="512" rx="118" ry="262"/><path d="M250 512h524M276 392h472M276 632h472"/><path d="M512 250v524"/>
+</g>
+<g transform="rotate(-24 512 512)"><ellipse cx="512" cy="512" rx="378" ry="128" fill="none" stroke="url(#gold)" stroke-width="20" stroke-linecap="round" stroke-dasharray="1020 400" stroke-dashoffset="-210"/><circle cx="888" cy="512" r="30" fill="url(#gold)"/></g>
+</svg>

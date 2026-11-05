@@ -1,0 +1,14 @@
+name = "passage-push"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+[[kv_namespaces]]
+binding = "SUBS"
+id = "HIER_KV_ID_EINTRAGEN"   # npx wrangler kv namespace create SUBS
+
+[triggers]
+crons = ["0 7 * * *"]          # täglich 07:00 UTC
+
+[vars]
+ALLOW_ORIGIN = "https://n-marius.github.io"
+VAPID_SUBJECT = "mailto:DEINE@MAIL.DE"
