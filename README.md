@@ -8,14 +8,14 @@ Statische PWA (kein Build, kein Server). Alle Daten bleiben lokal im Gerät.
 3. Nur die vom Home-Bildschirm gestartete App kann Mitteilungen (iOS ≥ 16.4).
 
 ## Funktionen
-- **Dokumente**: Pass (Staatsbürgerschaft), ETA/Reisegenehmigung, Visum – je mit Ablaufdatum, optional „gültig ab“; ETA/Visum für mehrere Länder (inkl. Schengen-Raum). Liste nach Ablauf sortiert.
+- **Dokumente**: Pass (Staatsbürgerschaft), ETA/VoA, e-Visum, Visum – je mit Ablaufdatum, optional „gültig ab“; ETA/Visum für mehrere Länder (inkl. Schengen-Raum). Liste nach Ablauf sortiert.
 - **Karte** (3 Ansichten): Reisefreiheit je Staatsbürgerschaft · plus gültige ETA/Visa grün · nur eigene Dokumente. Tippen auf ein Land zeigt Details; Suche für Kleinstaaten.
 - **Erinnerungen** X Monate vor Ablauf (je Dokumenttyp einstellbar): Mitteilung/Badge beim Öffnen, **Kalender-Export (.ics)** mit Alarmen (funktioniert auf dem iPhone ohne Server), optional echter Server-Push.
 - Sicherung/Import als JSON (Einstellungen).
 
 ## Datenquellen
 - Einreisebestimmungen: [Passport Index Dataset](https://github.com/ilyankou/passport-index-dataset) (`passport-index-tidy-iso2.csv`). Die App ruft die Datei live ab (alle 7 Tage bzw. per Knopf in den Einstellungen), Fallback: eingebauter Snapshot `data/`. Zusätzlich aktualisiert `.github/workflows/update-data.yml` den Snapshot wöchentlich.
-- Zuordnung: Zahl/„visa free“ → grün; ETA, e-Visa, Visa on arrival → gelb (e-Visa/VoA in den Einstellungen auf orange umstellbar); „visa required“ → dunkelorange; „no admission“ → rot. Das Passport Index Dataset ist ein Community-Datensatz, **keine amtliche Quelle** (eine amtliche, frei abrufbare Gesamtquelle für Visaregeln gibt es nicht; IATA Timatic ist kostenpflichtig). Wie aktuell einzelne Einträge sind, ist nicht garantiert.
+- Zuordnung: Zahl/„visa free“/eigener Staat → grün; ETA und Visa on arrival → gelb („ETA/VoA“); e-Visa → orange; „visa required“ → dunkelorange; „no admission“ → rot. Die Quelle unterscheidet bei e-Visa nicht zwischen schnell und aufwendig, daher starten alle orange; je Land und Pass lässt sich das im Länderdetail manuell ändern (lokal gespeichert). Das Passport Index Dataset ist ein Community-Datensatz, **keine amtliche Quelle**; Aktualität einzelner Einträge ist nicht garantiert.
 - **Rot** = „no admission“ der Quelle plus manuell festgelegt: Nordkorea, Russland (`data/overrides.json`, frei änderbar). Reisewarnungen fließen **nicht** ein. Eigene Staatsbürgerschaft ist immer grün.
 - Einzige Korrektur der Quelle: UK-ETA für Deutsche (`data/overrides.json`; gov.uk/guidance/electronic-travel-authorisation-eta: Europäer brauchen i. d. R. eine ETA).
 - **Besetzte Gebiete** (Krim, Donbas u. a. besetzte Teile der Ukraine; Abchasien, Zchinwali-Gebiet) werden in der Farbe Russlands schraffiert. Geometrie: DeepState (OSINT, nicht amtlich), Snapshot `data/occupied.json`, wöchentlich per Workflow aktualisiert.

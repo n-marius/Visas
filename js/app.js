@@ -6,7 +6,8 @@ const CSV_LOCAL = 'data/passport-index-tidy-iso2.csv';
 const SCHENGEN = ['AT','BE','BG','HR','CZ','DK','EE','FI','FR','DE','GR','HU','IS','IT','LV','LI','LT','LU','MT','NL','NO','PL','PT','RO','SK','SI','ES','SE','CH'];
 const TYPES = {
   passport: { label: 'Pass', icon: '🛂' },
-  eta: { label: 'ETA / Reisegenehmigung', short: 'ETA', icon: '🪪' },
+  eta: { label: 'ETA / VoA', short: 'ETA/VoA', icon: '🪪' },
+  evisa: { label: 'e-Visum', short: 'e-Visum', icon: '💻' },
   visa: { label: 'Visum', short: 'Visum', icon: '📄' }
 };
 const $ = (s, e = document) => e.querySelector(s);
@@ -15,7 +16,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
 /* ---------- State ---------- */
-const DEF = () => ({ docs: [], s: { remind: { passport: 6, eta: 1, visa: 2 }, eYellow: true, mode: 'free', filter: 'all', push: { url: '', key: '' }, notified: {}, stamp: null } });
+const DEF = () => ({ docs: [], s: { remind: { passport: 6, eta: 1, evisa: 2, visa: 2 }, cls: {}, mode: 'free', filter: 'all', push: { url: '', key: '' }, notified: {}, stamp: null } });
 let st = DEF();
 try { const r = JSON.parse(localStorage.getItem(KEY)); if (r && Array.isArray(r.docs)) { st = { docs: r.docs, s: Object.assign(DEF().s, r.s) }; st.s.remind = Object.assign(DEF().s.remind, r.s?.remind); } } catch {}
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch {} pushSync(); };
@@ -126,16 +127,18 @@ function buildAll() {
 }
 
 /* ---------- Einstufung ---------- */
-const RANK = { green: 0, yellow: 1, orange: 2, red: 3 };
+const RANK = { green: 0, yellow: 1, orange: 2, dark: 3, red: 4 };
 const reqVal = (pp, dest) => pp === dest ? '-1' : (OVR.byPassport?.[pp]?.[dest] ?? V[pp]?.[dest]);
 function reqClass(v) {
   if (v == null) return null;
   if (v === '-1' || v === 'visa free' || /^\d+$/.test(v)) return 'green';
-  if (v === 'eta') return 'yellow';
-  if (v === 'e-visa' || v === 'visa on arrival') return st.s.eYellow ? 'yellow' : 'orange';
+  if (v === 'eta' || v === 'visa on arrival') return 'yellow';
+  if (v === 'e-visa') return 'orange';
   if (v === 'no admission') return 'red';
-  return 'orange';
+  return 'dark';
 }
+// Manuelle Einstufung je Pass und Ziel hat Vorrang (Länderdetail), sonst Zuordnung aus der Quelle
+const clsFor = (pp, dest) => st.s.cls[pp + '>' + dest] || reqClass(reqVal(pp, dest));
 function reqText(v) {
   if (v == null) return 'keine Daten';
   if (v === '-1') return 'Eigener Staat';
@@ -149,14 +152,15 @@ function baseClass(dest, pps) {
   if (pps.includes(dest)) return 'green';
   if (restricted(dest)) return 'red';
   let best = null;
-  for (const p of pps) { const c = reqClass(reqVal(p, dest)); if (c && (best === null || RANK[c] < RANK[best])) best = c; }
+  for (const p of pps) { const c = clsFor(p, dest); if (c && (best === null || RANK[c] < RANK[best])) best = c; }
   return best || 'grey';
 }
 function docClass(dest, mode) {
   const act = st.docs.filter(d => active(d) && d.countries.includes(dest));
   if (mode === 'only') {
     if (act.some(d => d.type === 'passport')) return 'green';
-    if (act.some(d => d.type === 'visa')) return 'orange';
+    if (act.some(d => d.type === 'visa')) return 'dark';
+    if (act.some(d => d.type === 'evisa')) return 'orange';
     if (act.some(d => d.type === 'eta')) return 'yellow';
     return 'grey';
   }
@@ -172,12 +176,12 @@ function classOf(dest, mode) {
 /* ---------- Karte ---------- */
 let occP, occB = [], mapSvg, mapG, view = { k: 1, x: 0, y: 0 }, selected = null;
 const LEG = {
-  free: [['green', 'Frei bereisbar'], ['yellow', 'ETA / e-Visum / VoA'], ['orange', 'Visum nötig'], ['red', 'Nicht regulär bereisbar'], ['grey', 'Keine Daten']],
-  docs: [['green', 'Frei / Dokument vorhanden'], ['yellow', 'ETA / e-Visum / VoA'], ['orange', 'Visum nötig'], ['red', 'Nicht regulär bereisbar']],
-  only: [['green', 'Pass'], ['yellow', 'ETA'], ['orange', 'Visum'], ['grey', 'Kein Dokument']]
+  free: [['green', 'Frei bereisbar'], ['yellow', 'ETA / VoA'], ['orange', 'e-Visum'], ['dark', 'Visum'], ['red', 'Nicht regulär bereisbar'], ['grey', 'Keine Daten']],
+  docs: [['green', 'Frei / Dokument vorhanden'], ['yellow', 'ETA / VoA'], ['orange', 'e-Visum'], ['dark', 'Visum'], ['red', 'Nicht regulär bereisbar']],
+  only: [['green', 'Pass'], ['yellow', 'ETA / VoA'], ['orange', 'e-Visum'], ['dark', 'Visum'], ['grey', 'Kein Dokument']]
 };
 const HATCH = '<span><i class="hatch"></i>Besetzt (Farbe Russlands)</span>';
-const COL = { green: 'var(--green)', yellow: 'var(--yellow)', orange: 'var(--orange)', red: 'var(--red)', grey: 'var(--grey)' };
+const COL = { green: 'var(--green)', yellow: 'var(--yellow)', orange: 'var(--orange)', dark: 'var(--dark)', red: 'var(--red)', grey: 'var(--grey)' };
 function initMap() {
   const wrap = $('#mapWrap');
   const ns = 'http://www.w3.org/2000/svg';
@@ -193,7 +197,7 @@ function initMap() {
   mapSvg.appendChild(mapG);
   if (OCC) {
     const defs = document.createElementNS(ns, 'defs');
-    defs.innerHTML = ['green', 'yellow', 'orange', 'red', 'grey'].map(c => `<pattern id="h-${c}" width="1.6" height="1.6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="0.8" height="1.6" fill="${COL[c]}"/></pattern>`).join('');
+    defs.innerHTML = ['green', 'yellow', 'orange', 'dark', 'red', 'grey'].map(c => `<pattern id="h-${c}" width="1.6" height="1.6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="0.8" height="1.6" fill="${COL[c]}"/></pattern>`).join('');
     mapSvg.prepend(defs);
     const mk = (d, cls) => { const e = document.createElementNS(ns, 'path'); e.setAttribute('d', d); e.setAttribute('class', cls); mapG.appendChild(e); return e; };
     occB = [mk(OCC.ua, 'occ'), mk(OCC.ge, 'occ')];
@@ -290,18 +294,23 @@ function openCountry(c) {
   const pps = citizenships();
   const cls = classOf(c, st.s.mode === 'only' ? 'free' : st.s.mode);
   const base = baseClass(c, pps);
-  const label = { green: 'Frei bereisbar', yellow: 'ETA / e-Visum / VoA', orange: 'Visum erforderlich', red: 'Nicht regulär bereisbar', grey: 'Keine Daten' };
-  const rows = pps.map(p => `<div class="row"><span class="ico">${flag(p)}</span><div class="meta"><b>${esc(cname(p))}</b><small>${esc(restricted(c) && p !== c ? warnText(c) : reqText(reqVal(p, c)))}</small></div></div>`).join('');
+  const label = { green: 'Frei bereisbar', yellow: 'ETA / VoA', orange: 'e-Visum', dark: 'Visum erforderlich', red: 'Nicht regulär bereisbar', grey: 'Keine Daten' };
+  const ovOpts = (p) => [['', 'Automatisch'], ['green', 'Frei'], ['yellow', 'ETA / VoA'], ['orange', 'e-Visum'], ['dark', 'Visum']].map(([v, t]) => `<option value="${v}" ${(st.s.cls[p + '>' + c] || '') === v ? 'selected' : ''}>${t}</option>`).join('');
+  const rows = pps.filter(p => p !== c).map(p => `<div class="row"><span class="ico">${flag(p)}</span><div class="meta"><b>${esc(cname(p))}</b><small>${esc(restricted(c) ? warnText(c) : reqText(reqVal(p, c)))}</small></div><select class="ovsel" data-ov="${p}" aria-label="Einstufung">${ovOpts(p)}</select></div>`).join('');
   const docs = st.docs.filter(d => d.countries.includes(c)).sort((a, b) => eff(a).localeCompare(eff(b)));
   const docRows = docs.map(d => `<button class="row" data-edit="${d.id}"><span class="ico ${d.type}">${TYPES[d.type].icon}</span><div class="meta"><b>${esc(d.title || TYPES[d.type].label)}</b><small>bis ${fmtDate(eff(d))}</small></div><span class="badge ${state(d)}">${fmtLeft(daysTo(eff(d)))}</span></button>`).join('');
-  const sug = base === 'yellow' ? 'eta' : base === 'orange' ? 'visa' : 'eta';
+  const sug = { yellow: 'eta', orange: 'evisa', dark: 'visa' }[base] || 'eta';
   const s = sheet(cname(c), '', 'Fertig', `
-    <div style="text-align:center;padding:4px 0 14px"><div class="big-flag">${flag(c)}</div><div style="margin-top:8px"><span class="pill ${base}">${label[base]}</span></div></div>
-    ${pps.length ? `<div class="group-title" style="margin-top:4px">Einreise je Staatsbürgerschaft</div><div class="group">${rows}</div>` : '<div class="foot" style="margin:0 0 16px">Noch keine Staatsbürgerschaft hinterlegt.</div>'}
+    <div style="text-align:center;padding:4px 0 14px"><div class="big-flag">${flag(c)}</div><div style="margin-top:8px"><span class="pill ${base}" id="cPill">${label[base]}</span></div></div>
+    ${pps.length ? `<div class="group-title" style="margin-top:4px">Einreise je Staatsbürgerschaft (Einstufung änderbar)</div><div class="group">${rows}</div>` : '<div class="foot" style="margin:0 0 16px">Noch keine Staatsbürgerschaft hinterlegt.</div>'}
     ${docs.length ? `<div class="group-title">Meine Dokumente</div><div class="group">${docRows}</div>` : ''}
     <button class="btn" id="cAdd">Eintrag für ${esc(cname(c))} hinzufügen</button>
     <div class="foot" style="margin-top:0">Angaben ohne Gewähr – vor Reiseantritt beim Auswärtigen Amt bzw. der Botschaft prüfen.</div>`);
-  void cls;
+  $$('[data-ov]', s.sh).forEach(sel => sel.onchange = () => {
+    const k = sel.dataset.ov + '>' + c;
+    if (sel.value) st.s.cls[k] = sel.value; else delete st.s.cls[k];
+    save(); const b = baseClass(c, citizenships()); const pill = $('#cPill', s.sh); pill.className = 'pill ' + b; pill.textContent = label[b]; paint();
+  });
   const end = () => { selected = null; paint(); };
   s.right.onclick = () => { s.close(); end(); };
   s.left.onclick = () => { s.close(); end(); };
@@ -455,7 +464,7 @@ function renderSettings() {
   const when = dataInfo.stamp ? new Date(dataInfo.stamp).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : null;
   $('#settingsBody').innerHTML = `
     <div class="group-title">Erinnerung vor Ablauf</div>
-    <div class="group plain">${stp('passport', 'Pass')}${stp('eta', 'ETA / Reisegenehmigung')}${stp('visa', 'Visum')}</div>
+    <div class="group plain">${stp('passport', 'Pass')}${stp('eta', 'ETA / VoA')}${stp('evisa', 'e-Visum')}${stp('visa', 'Visum')}</div>
     <div class="group-title">Benachrichtigungen</div>
     <div class="group plain">
       <button class="row" id="bNotif"><div class="meta"><b>Mitteilungen auf diesem Gerät</b><small>Status: ${perm === 'granted' ? 'erlaubt' : perm === 'denied' ? 'abgelehnt (in iOS-Einstellungen ändern)' : perm === 'default' ? 'noch nicht erlaubt' : perm}</small></div><span class="chev">›</span></button>
@@ -463,7 +472,12 @@ function renderSettings() {
     </div>
     <div class="foot">Ohne eigenen Push-Server erscheinen Mitteilungen nur, wenn die App geöffnet wird. Für echte Hintergrund-Push: siehe unten und README.</div>
     <div class="group-title">Länder-Einstufung</div>
-    <div class="group plain"><div class="row"><div class="meta"><b>e-Visum / Visum bei Ankunft als gelb</b><small>Aus: dunkelorange wie „echtes“ Visum</small></div><div class="switch ${st.s.eYellow ? 'on' : ''}" id="tYel"></div></div></div>
+    <div class="group plain">
+      <div class="row"><div class="meta"><b>Gelb · ETA / VoA</b><small>einfacher Online-Antrag mit schneller Erteilung oder Visum bei Ankunft</small></div></div>
+      <div class="row"><div class="meta"><b>Orange · e-Visum</b><small>aufwendigerer Online-Antrag mit Bearbeitungszeit</small></div></div>
+      <div class="row"><div class="meta"><b>Dunkelorange · Visum</b><small>physisches Visum (Botschaft/Konsulat)</small></div></div>
+    </div>
+    <div class="foot">Die Quelle unterscheidet bei „e-Visum“ nicht zwischen schnell und aufwendig; alle e-Visa starten daher orange. Pro Land und Pass lässt sich das im Länderdetail (Karte antippen) korrigieren.</div>
     <div class="group-title">Reisedaten</div>
     <div class="group plain">
       <div class="row"><div class="meta"><b>Quelle</b><small>Passport Index Dataset (GitHub, ilyankou) · ${dataInfo.src === 'live' ? 'live abgerufen ' + when : 'eingebauter Stand ' + (dataInfo.snap || '')}</small></div></div>
@@ -487,7 +501,6 @@ function renderSettings() {
     <div class="foot" style="margin-top:0">Angaben zu Einreisebestimmungen ohne Gewähr. Karte: Natural Earth.</div>`;
   const root = $('#settingsBody');
   $$('[data-s]', root).forEach(b => b.onclick = () => { const k = b.dataset.s; st.s.remind[k] = Math.min(36, Math.max(1, st.s.remind[k] + Number(b.dataset.d))); save(); renderSettings(); renderList(); checkReminders(); });
-  $('#tYel').onclick = () => { st.s.eYellow = !st.s.eYellow; save(); renderSettings(); paint(); };
   $('#bNotif').onclick = async () => { if (!('Notification' in window)) return alert('Mitteilungen werden hier nicht unterstützt. Auf dem iPhone: App zum Home-Bildschirm hinzufügen (iOS 16.4+).'); await Notification.requestPermission(); renderSettings(); checkReminders(); if (Notification.permission === 'granted') notify('Passage', 'Mitteilungen sind aktiv.', 'test'); };
   $('#bIcs').onclick = () => st.docs.length ? shareFile('passage-erinnerungen.ics', 'text/calendar', ics()) : alert('Noch keine Einträge.');
   $('#bData').onclick = async () => { $('#bData small')?.remove(); const ok = await refreshLive(); alert(ok ? 'Reisedaten aktualisiert.' : 'Aktualisierung fehlgeschlagen (offline oder Quelle nicht erreichbar). Der bisherige Stand bleibt aktiv.'); paint(); renderSettings(); };
