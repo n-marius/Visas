@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 const KEY = 'passage.v1';
-const APP_VERSION = '2026-11-05.8';
+const APP_VERSION = '2026-11-05.9';
 const CSV_LIVE = 'https://raw.githubusercontent.com/ilyankou/passport-index-dataset/master/passport-index-tidy-iso2.csv';
 const CSV_LOCAL = 'data/passport-index-tidy-iso2.csv';
 const SCHENGEN = ['AT','BE','BG','HR','CZ','DK','EE','FI','FR','DE','GR','HU','IS','IT','LV','LI','LT','LU','MT','NL','NO','PL','PT','RO','SK','SI','ES','SE','CH'];
@@ -169,7 +169,25 @@ function docClass(dest, mode) {
   }
   return act.some(d => d.type !== 'passport') ? 'green' : null;
 }
+// Vergleichsansicht: Pass A (bevorzugt DE) gegen Pass B (bevorzugt UA)
+function cmpPair() {
+  const pps = citizenships();
+  if (pps.length < 2) return [null, null];
+  const a = pps.includes('DE') ? 'DE' : pps[0];
+  const b = pps.includes('UA') && a !== 'UA' ? 'UA' : pps.find(x => x !== a);
+  return [a, b];
+}
+const stayDays = (pp, dest) => { const v = reqVal(pp, dest); return pp === dest ? Infinity : /^\d+$/.test(v || '') ? Number(v) : null; };
+function cmpClass(dest) {
+  const [a, b] = cmpPair(); if (!a) return 'grey';
+  const k = pp => pp === dest ? 'green' : restricted(dest) ? 'red' : clsFor(pp, dest);
+  const ca = k(a), cb = k(b); if (!ca || !cb) return 'grey';
+  if (RANK[ca] !== RANK[cb]) return RANK[ca] < RANK[cb] ? 'green' : 'red';
+  if (ca === 'green') { const da = stayDays(a, dest), db = stayDays(b, dest); if (da != null && db != null && da !== db) return da > db ? 'yellow' : 'orange'; }
+  return 'grey';
+}
 function classOf(dest, mode) {
+  if (mode === 'cmp') return cmpClass(dest);
   const pps = citizenships();
   if (mode === 'only') return docClass(dest, 'only');
   const dc = mode === 'docs' ? docClass(dest, 'docs') : null;
@@ -278,11 +296,13 @@ function paint() {
   if (occP) { occP.setAttribute('fill', `url(#h-${classOf('RU', mode)})`); occB[0].setAttribute('fill', COL[classOf('UA', mode)]); occB[1].setAttribute('fill', COL[classOf('GE', mode)]); }
   for (const p of [...mapG.children, ...(marksG ? marksG.children : [])]) if (p.dataset.c) p.setAttribute('class', 'c-' + classOf(p.dataset.c, mode) + (p.dataset.c === selected ? ' sel' : ''));
   $$('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
+  if (mode === 'cmp') { const [a, b] = cmpPair(); const A = a ? cname(a) : 'A', B = b ? cname(b) : 'B'; LEG.cmp = [['green', `${A}: bessere Kategorie`], ['yellow', `${A}: längerer Aufenthalt`], ['grey', 'Gleich'], ['orange', `${B}: längerer Aufenthalt`], ['red', `${B}: bessere Kategorie`]]; }
   $('#legend').innerHTML = LEG[mode].map(([c, t]) => `<span><i style="background:${COL[c]}"></i>${t}</span>`).join('');
   const hint = $('#mapHint');
-  if (mode !== 'only' && !citizenships().length) {
+  const need = mode === 'cmp' ? 2 : 1;
+  if (mode !== 'only' && citizenships().length < need) {
     hint.hidden = false;
-    hint.innerHTML = 'Für die Reisefreiheit fehlt noch eine Staatsbürgerschaft. <button id="hintAdd">Pass eintragen</button>';
+    hint.innerHTML = (mode === 'cmp' ? 'Für den Vergleich werden zwei Staatsbürgerschaften benötigt.' : 'Für die Reisefreiheit fehlt noch eine Staatsbürgerschaft.') + ' <button id="hintAdd">Pass eintragen</button>';
     $('#hintAdd').onclick = () => openForm(null, { type: 'passport' });
   } else hint.hidden = true;
 }
