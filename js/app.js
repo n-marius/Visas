@@ -2,6 +2,7 @@
 'use strict';
 const KEY = 'passage.v1';
 const CSV_LIVE = 'https://raw.githubusercontent.com/ilyankou/passport-index-dataset/master/passport-index-tidy-iso2.csv';
+const AA_LIVE = 'https://www.auswaertiges-amt.de/opendata/travelwarning';
 const CSV_LOCAL = 'data/passport-index-tidy-iso2.csv';
 const SCHENGEN = ['AT','BE','BG','HR','CZ','DK','EE','FI','FR','DE','GR','HU','IS','IT','LV','LI','LT','LU','MT','NL','NO','PL','PT','RO','SK','SI','ES','SE','CH'];
 const TYPES = {
@@ -77,7 +78,7 @@ function cdesc(a) {
 }
 
 /* ---------- Visa-Daten ---------- */
-let V = {}, OVR = { restricted: [], byPassport: {} }, WORLD = null, ALL = [], dataInfo = { src: '', stamp: null, snap: null };
+let V = {}, OVR = { manualRestricted: [], byPassport: {} }, AA = { warning: [], partial: [], situation: [], fetched: null }, OCC = null, WORLD = null, ALL = [], dataInfo = { src: '', stamp: null, snap: null };
 function setVisa(text) {
   const out = {};
   const lines = text.split('\n');
@@ -89,11 +90,15 @@ function setVisa(text) {
   V = out;
 }
 async function loadData() {
-  const [w, o, m] = await Promise.all([
+  const [w, o, m, aa, oc] = await Promise.all([
     fetch('data/world.json').then(r => r.json()),
     fetch('data/overrides.json').then(r => r.json()).catch(() => OVR),
-    fetch('data/meta.json').then(r => r.json()).catch(() => ({}))
+    fetch('data/meta.json').then(r => r.json()).catch(() => ({})),
+    fetch('data/travelwarnings.json').then(r => r.json()).catch(() => AA),
+    fetch('data/occupied.json').then(r => r.json()).catch(() => null)
   ]);
+  AA = aa; OCC = oc; dataInfo.aa = 'snapshot';
+  try { const r = await (await caches.open('passage-data')).match('live-aa'); if (r) { AA = await r.json(); dataInfo.aa = 'live'; dataInfo.aaStamp = Number(r.headers.get('x-fetched')); } } catch {}
   WORLD = w; OVR = o; dataInfo.snap = m.snapshot || null;
   let text = null;
   try {
@@ -103,9 +108,24 @@ async function loadData() {
   if (!text) { text = await (await fetch(CSV_LOCAL)).text(); dataInfo.src = 'snapshot'; }
   setVisa(text);
   buildAll();
-  if (!dataInfo.stamp || Date.now() - dataInfo.stamp > 7 * 864e5) refreshLive().then(() => { paint(); renderSettings(); });
+  if (!dataInfo.stamp || Date.now() - dataInfo.stamp > 7 * 864e5 || !dataInfo.aaStamp || Date.now() - dataInfo.aaStamp > 864e5) refreshLive().then(() => { paint(); renderSettings(); });
+}
+async function refreshAA() {
+  try {
+    const r = await fetch(AA_LIVE, { cache: 'no-store' });
+    if (!r.ok) throw 0;
+    const j = (await r.json()).response;
+    const e = Object.entries(j).filter(([k]) => /^\d+$/.test(k)).map(([, v]) => v);
+    if (e.length < 100) throw 0;
+    const pick = f => e.filter(v => v[f] && v.countryCode).map(v => v.countryCode);
+    const aa = { fetched: today(), aaModified: j.lastModified, warning: pick('warning'), partial: pick('partialWarning'), situation: pick('situationWarning') };
+    await (await caches.open('passage-data')).put('live-aa', new Response(JSON.stringify(aa), { headers: { 'x-fetched': String(Date.now()) } }));
+    AA = aa; dataInfo.aa = 'live'; dataInfo.aaStamp = Date.now();
+    return true;
+  } catch { return false; }
 }
 async function refreshLive() {
+  await refreshAA();
   try {
     const r = await fetch(CSV_LIVE, { cache: 'no-store' });
     if (!r.ok) throw 0;
@@ -141,7 +161,14 @@ function reqText(v) {
   return { 'visa free': 'visumfrei', 'eta': 'ETA / elektronische Reisegenehmigung', 'e-visa': 'e-Visum (online beantragen)', 'visa on arrival': 'Visum bei Ankunft', 'visa required': 'Visum vorab erforderlich', 'no admission': 'Einreise nicht gestattet' }[v] || v;
 }
 const citizenships = () => [...new Set(st.docs.filter(d => d.type === 'passport').map(d => d.countries[0]).filter(Boolean))];
-const restricted = c => (OVR.restricted || []).includes(c);
+const restricted = c => AA.warning.includes(c) || (OVR.manualRestricted || []).includes(c);
+function warnText(c) {
+  if (AA.warning.includes(c)) return 'Reisewarnung des Auswärtigen Amts';
+  if ((OVR.manualRestricted || []).includes(c)) return 'Einreise faktisch nicht möglich (manuell hinterlegt)';
+  if (AA.partial.includes(c)) return 'Teilreisewarnung des Auswärtigen Amts';
+  if (AA.situation.includes(c)) return 'Sicherheitshinweis des Auswärtigen Amts';
+  return '';
+}
 function baseClass(dest, pps) {
   if (pps.includes(dest)) return 'green';
   if (restricted(dest)) return 'red';
@@ -167,12 +194,13 @@ function classOf(dest, mode) {
 }
 
 /* ---------- Karte ---------- */
-let mapSvg, mapG, view = { k: 1, x: 0, y: 0 }, selected = null;
+let occP, occB = [], mapSvg, mapG, view = { k: 1, x: 0, y: 0 }, selected = null;
 const LEG = {
   free: [['green', 'Frei bereisbar'], ['yellow', 'ETA / e-Visum / VoA'], ['orange', 'Visum nötig'], ['red', 'Nicht regulär bereisbar'], ['grey', 'Keine Daten']],
   docs: [['green', 'Frei / Dokument vorhanden'], ['yellow', 'ETA / e-Visum / VoA'], ['orange', 'Visum nötig'], ['red', 'Nicht regulär bereisbar']],
   only: [['green', 'Pass'], ['yellow', 'ETA'], ['orange', 'Visum'], ['grey', 'Kein Dokument']]
 };
+const HATCH = '<span><i class="hatch"></i>Besetzt (Farbe Russlands)</span>';
 const COL = { green: 'var(--green)', yellow: 'var(--yellow)', orange: 'var(--orange)', red: 'var(--red)', grey: 'var(--grey)' };
 function initMap() {
   const wrap = $('#mapWrap');
@@ -187,6 +215,14 @@ function initMap() {
     mapG.appendChild(p);
   }
   mapSvg.appendChild(mapG);
+  if (OCC) {
+    const defs = document.createElementNS(ns, 'defs');
+    defs.innerHTML = ['green', 'yellow', 'orange', 'red', 'grey'].map(c => `<pattern id="h-${c}" width="1.6" height="1.6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="0.8" height="1.6" fill="${COL[c]}"/></pattern>`).join('');
+    mapSvg.prepend(defs);
+    const mk = (d, cls) => { const e = document.createElementNS(ns, 'path'); e.setAttribute('d', d); e.setAttribute('class', cls); mapG.appendChild(e); return e; };
+    occB = [mk(OCC.ua, 'occ'), mk(OCC.ge, 'occ')];
+    occP = mk(OCC.ua + OCC.ge, 'occ');
+  }
   wrap.prepend(mapSvg);
   // Gesten
   const ptrs = new Map(); let moved = false, startDist = 0, startK = 1, down = null;
@@ -195,6 +231,7 @@ function initMap() {
     const [w, h] = size();
     view.k = Math.min(12, Math.max(1, view.k));
     view.x = Math.min(0, Math.max(-w * (view.k - 1), view.x)); view.y = Math.min(0, Math.max(-h * (view.k - 1), view.y));
+    mapSvg.style.setProperty('--sw', (0.6 * WORLD.w / w / view.k).toFixed(3));
     mapSvg.style.transformOrigin = '0 0';
     mapSvg.style.transform = `translate(${view.x}px,${view.y}px) scale(${view.k})`;
   };
@@ -233,7 +270,7 @@ function initMap() {
   $('#zIn').onclick = () => zoomAt(1.6, ...mid());
   $('#zOut').onclick = () => zoomAt(1 / 1.6, ...mid());
   $('#zReset').onclick = () => { view = { k: 1, x: 0, y: 0 }; apply(); };
-  window.addEventListener('resize', apply);
+  window.addEventListener('resize', apply); apply();
   window.__mapZoomTo = (c) => {
     const p = mapG.querySelector(`path[data-c="${c}"]`); if (!p) return;
     const [w, h] = size(), bb = p.getBBox();
@@ -246,9 +283,10 @@ function initMap() {
 function paint() {
   if (!mapG) return;
   const mode = st.s.mode;
-  for (const p of mapG.children) p.setAttribute('class', 'c-' + classOf(p.dataset.c, mode) + (p.dataset.c === selected ? ' sel' : ''));
+  if (occP) { occP.setAttribute('fill', `url(#h-${classOf('RU', mode)})`); occB[0].setAttribute('fill', COL[classOf('UA', mode)]); occB[1].setAttribute('fill', COL[classOf('GE', mode)]); }
+  for (const p of mapG.children) if (p.dataset.c) p.setAttribute('class', 'c-' + classOf(p.dataset.c, mode) + (p.dataset.c === selected ? ' sel' : ''));
   $$('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
-  $('#legend').innerHTML = LEG[mode].map(([c, t]) => `<span><i style="background:${COL[c]}"></i>${t}</span>`).join('');
+  $('#legend').innerHTML = LEG[mode].map(([c, t]) => `<span><i style="background:${COL[c]}"></i>${t}</span>`).join('') + (OCC ? HATCH : '');
   const hint = $('#mapHint');
   if (mode !== 'only' && !citizenships().length) {
     hint.hidden = false;
@@ -277,12 +315,13 @@ function openCountry(c) {
   const cls = classOf(c, st.s.mode === 'only' ? 'free' : st.s.mode);
   const base = baseClass(c, pps);
   const label = { green: 'Frei bereisbar', yellow: 'ETA / e-Visum / VoA', orange: 'Visum erforderlich', red: 'Nicht regulär bereisbar', grey: 'Keine Daten' };
-  const rows = pps.map(p => `<div class="row"><span class="ico">${flag(p)}</span><div class="meta"><b>${esc(cname(p))}</b><small>${esc(restricted(c) && p !== c ? 'Einreise stark eingeschränkt / Reisewarnung' : reqText(reqVal(p, c)))}</small></div></div>`).join('');
+  const rows = pps.map(p => `<div class="row"><span class="ico">${flag(p)}</span><div class="meta"><b>${esc(cname(p))}</b><small>${esc(restricted(c) && p !== c ? warnText(c) : reqText(reqVal(p, c)))}</small></div></div>`).join('');
   const docs = st.docs.filter(d => d.countries.includes(c)).sort((a, b) => eff(a).localeCompare(eff(b)));
   const docRows = docs.map(d => `<button class="row" data-edit="${d.id}"><span class="ico ${d.type}">${TYPES[d.type].icon}</span><div class="meta"><b>${esc(d.title || TYPES[d.type].label)}</b><small>bis ${fmtDate(eff(d))}</small></div><span class="badge ${state(d)}">${fmtLeft(daysTo(eff(d)))}</span></button>`).join('');
   const sug = base === 'yellow' ? 'eta' : base === 'orange' ? 'visa' : 'eta';
   const s = sheet(cname(c), '', 'Fertig', `
     <div style="text-align:center;padding:4px 0 14px"><div class="big-flag">${flag(c)}</div><div style="margin-top:8px"><span class="pill ${base}">${label[base]}</span></div></div>
+    ${warnText(c) ? `<div class="banner" style="margin-top:0">⚠️ ${esc(warnText(c))}</div>` : ''}
     ${pps.length ? `<div class="group-title" style="margin-top:4px">Einreise je Staatsbürgerschaft</div><div class="group">${rows}</div>` : '<div class="foot" style="margin:0 0 16px">Noch keine Staatsbürgerschaft hinterlegt.</div>'}
     ${docs.length ? `<div class="group-title">Meine Dokumente</div><div class="group">${docRows}</div>` : ''}
     <button class="btn" id="cAdd">Eintrag für ${esc(cname(c))} hinzufügen</button>
@@ -453,6 +492,8 @@ function renderSettings() {
     <div class="group-title">Reisedaten</div>
     <div class="group plain">
       <div class="row"><div class="meta"><b>Quelle</b><small>Passport Index Dataset (GitHub, ilyankou) · ${dataInfo.src === 'live' ? 'live abgerufen ' + when : 'eingebauter Stand ' + (dataInfo.snap || '')}</small></div></div>
+      <div class="row"><div class="meta"><b>Reisewarnungen (rot)</b><small>Auswärtiges Amt, Open Data · ${dataInfo.aa === 'live' ? 'live abgerufen ' + new Date(dataInfo.aaStamp).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : 'eingebauter Stand ' + (AA.fetched || '')}${OVR.manualRestricted?.length ? ' · zusätzlich manuell: ' + OVR.manualRestricted.map(cname).join(', ') : ''}</small></div></div>
+      <div class="row"><div class="meta"><b>Besetzte Gebiete (Schraffur)</b><small>DeepState (OSINT, kein amtlicher Datensatz), Stand ${OCC ? OCC.fetched : '–'}</small></div></div>
       <button class="row" id="bData"><div class="meta"><b>Jetzt aktualisieren</b></div><span class="chev">›</span></button>
     </div>
     <div class="group-title">Push-Server (optional, fortgeschritten)</div>
