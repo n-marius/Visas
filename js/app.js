@@ -181,7 +181,6 @@ const LEG = {
   docs: [['green', 'Frei / Dokument vorhanden'], ['yellow', 'ETA / VoA'], ['orange', 'e-Visum'], ['dark', 'Visum'], ['red', 'Nicht regulär bereisbar']],
   only: [['green', 'Pass'], ['yellow', 'ETA / VoA'], ['orange', 'e-Visum'], ['dark', 'Visum'], ['grey', 'Kein Dokument']]
 };
-const HATCH = '<span><i class="hatch"></i>Besetzt (Farbe Russlands)</span>';
 const COL = { green: 'var(--green)', yellow: 'var(--yellow)', orange: 'var(--orange)', dark: 'var(--dark)', red: 'var(--red)', grey: 'var(--grey)' };
 function initMap() {
   const wrap = $('#mapWrap');
@@ -276,7 +275,7 @@ function paint() {
   if (occP) { occP.setAttribute('fill', `url(#h-${classOf('RU', mode)})`); occB[0].setAttribute('fill', COL[classOf('UA', mode)]); occB[1].setAttribute('fill', COL[classOf('GE', mode)]); }
   for (const p of [...mapG.children, ...(marksG ? marksG.children : [])]) if (p.dataset.c) p.setAttribute('class', 'c-' + classOf(p.dataset.c, mode) + (p.dataset.c === selected ? ' sel' : ''));
   $$('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
-  $('#legend').innerHTML = LEG[mode].map(([c, t]) => `<span><i style="background:${COL[c]}"></i>${t}</span>`).join('') + (OCC ? HATCH : '');
+  $('#legend').innerHTML = LEG[mode].map(([c, t]) => `<span><i style="background:${COL[c]}"></i>${t}</span>`).join('');
   const hint = $('#mapHint');
   if (mode !== 'only' && !citizenships().length) {
     hint.hidden = false;
