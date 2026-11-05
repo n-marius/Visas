@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 const KEY = 'passage.v1';
-const APP_VERSION = '2026-11-05.6';
+const APP_VERSION = '2026-11-05.7';
 const CSV_LIVE = 'https://raw.githubusercontent.com/ilyankou/passport-index-dataset/master/passport-index-tidy-iso2.csv';
 const CSV_LOCAL = 'data/passport-index-tidy-iso2.csv';
 const SCHENGEN = ['AT','BE','BG','HR','CZ','DK','EE','FI','FR','DE','GR','HU','IS','IT','LV','LI','LT','LU','MT','NL','NO','PL','PT','RO','SK','SI','ES','SE','CH'];
