@@ -16,7 +16,7 @@ export default {
       await env.SUBS.put(await hash(subscription.endpoint), JSON.stringify({ subscription, reminders: reminders || [] }));
       return new Response('ok', { headers: h });
     }
-    return new Response('Passage push worker', { headers: h });
+    return new Response('Visas push worker', { headers: h });
   },
 
   async scheduled(_evt, env) {

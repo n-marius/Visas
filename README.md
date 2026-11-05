@@ -1,4 +1,4 @@
-# Passage – Pässe, ETAs & Visa
+# Visas – Pässe, ETAs & Visa
 
 Statische PWA (kein Build, kein Server). Alle Daten bleiben lokal im Gerät.
 

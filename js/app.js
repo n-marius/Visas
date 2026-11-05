@@ -437,7 +437,7 @@ function ics() {
     return `BEGIN:VEVENT\r\nUID:${d.id}@passage\r\nDTSTAMP:${new Date().toISOString().replace(/[-:]|\.\d+/g, '')}\r\nDTSTART;VALUE=DATE:${dt(eff(d))}\r\nDTEND;VALUE=DATE:${nx(eff(d))}\r\nSUMMARY:${title.replace(/[,;]/g, ' ')}\r\n` +
       al(`-P${n - 1}DT15H`, 'Erinnerung: ' + title.replace(/[,;]/g, ' ')) + (n > 8 ? al('-P6DT15H', 'In einer Woche: ' + title.replace(/[,;]/g, ' ')) : '') + `END:VEVENT\r\n`;
   }).join('');
-  return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Passage//DE\r\nCALSCALE:GREGORIAN\r\n${ev}END:VCALENDAR\r\n`;
+  return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Visas//DE\r\nCALSCALE:GREGORIAN\r\n${ev}END:VCALENDAR\r\n`;
 }
 async function shareFile(name, type, content) {
   const file = new File([content], name, { type });
@@ -510,7 +510,7 @@ function renderSettings() {
     <div class="foot" style="margin-top:0">Angaben zu Einreisebestimmungen ohne Gewähr. Karte: Natural Earth.</div>`;
   const root = $('#settingsBody');
   $$('[data-s]', root).forEach(b => b.onclick = () => { const k = b.dataset.s; st.s.remind[k] = Math.min(36, Math.max(1, st.s.remind[k] + Number(b.dataset.d))); save(); renderSettings(); renderList(); checkReminders(); });
-  $('#bNotif').onclick = async () => { if (!('Notification' in window)) return alert('Mitteilungen werden hier nicht unterstützt. Auf dem iPhone: App zum Home-Bildschirm hinzufügen (iOS 16.4+).'); await Notification.requestPermission(); renderSettings(); checkReminders(); if (Notification.permission === 'granted') notify('Passage', 'Mitteilungen sind aktiv.', 'test'); };
+  $('#bNotif').onclick = async () => { if (!('Notification' in window)) return alert('Mitteilungen werden hier nicht unterstützt. Auf dem iPhone: App zum Home-Bildschirm hinzufügen (iOS 16.4+).'); await Notification.requestPermission(); renderSettings(); checkReminders(); if (Notification.permission === 'granted') notify('Visas', 'Mitteilungen sind aktiv.', 'test'); };
   $('#bIcs').onclick = () => st.docs.length ? shareFile('passage-erinnerungen.ics', 'text/calendar', ics()) : alert('Noch keine Einträge.');
   $('#bData').onclick = async () => { $('#bData small')?.remove(); const ok = await refreshLive(); alert(ok ? 'Reisedaten aktualisiert.' : 'Aktualisierung fehlgeschlagen (offline oder Quelle nicht erreichbar). Der bisherige Stand bleibt aktiv.'); paint(); renderSettings(); };
   $('#pUrl').onchange = e => { st.s.push.url = e.target.value.trim(); save(); };
