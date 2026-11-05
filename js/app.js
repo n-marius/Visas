@@ -2,7 +2,6 @@
 'use strict';
 const KEY = 'passage.v1';
 const CSV_LIVE = 'https://raw.githubusercontent.com/ilyankou/passport-index-dataset/master/passport-index-tidy-iso2.csv';
-const AA_LIVE = 'https://www.auswaertiges-amt.de/opendata/travelwarning';
 const CSV_LOCAL = 'data/passport-index-tidy-iso2.csv';
 const SCHENGEN = ['AT','BE','BG','HR','CZ','DK','EE','FI','FR','DE','GR','HU','IS','IT','LV','LI','LT','LU','MT','NL','NO','PL','PT','RO','SK','SI','ES','SE','CH'];
 const TYPES = {
@@ -78,7 +77,7 @@ function cdesc(a) {
 }
 
 /* ---------- Visa-Daten ---------- */
-let V = {}, OVR = { manualRestricted: [], byPassport: {} }, AA = { warning: [], partial: [], situation: [], fetched: null }, OCC = null, WORLD = null, ALL = [], dataInfo = { src: '', stamp: null, snap: null };
+let V = {}, OVR = { manualRestricted: [], byPassport: {} }, OCC = null, WORLD = null, ALL = [], dataInfo = { src: '', stamp: null, snap: null };
 function setVisa(text) {
   const out = {};
   const lines = text.split('\n');
@@ -90,15 +89,13 @@ function setVisa(text) {
   V = out;
 }
 async function loadData() {
-  const [w, o, m, aa, oc] = await Promise.all([
+  const [w, o, m, oc] = await Promise.all([
     fetch('data/world.json').then(r => r.json()),
     fetch('data/overrides.json').then(r => r.json()).catch(() => OVR),
     fetch('data/meta.json').then(r => r.json()).catch(() => ({})),
-    fetch('data/travelwarnings.json').then(r => r.json()).catch(() => AA),
     fetch('data/occupied.json').then(r => r.json()).catch(() => null)
   ]);
-  AA = aa; OCC = oc; dataInfo.aa = 'snapshot';
-  try { const r = await (await caches.open('passage-data')).match('live-aa'); if (r) { AA = await r.json(); dataInfo.aa = 'live'; dataInfo.aaStamp = Number(r.headers.get('x-fetched')); } } catch {}
+  OCC = oc;
   WORLD = w; OVR = o; dataInfo.snap = m.snapshot || null;
   let text = null;
   try {
@@ -108,24 +105,9 @@ async function loadData() {
   if (!text) { text = await (await fetch(CSV_LOCAL)).text(); dataInfo.src = 'snapshot'; }
   setVisa(text);
   buildAll();
-  if (!dataInfo.stamp || Date.now() - dataInfo.stamp > 7 * 864e5 || !dataInfo.aaStamp || Date.now() - dataInfo.aaStamp > 864e5) refreshLive().then(() => { paint(); renderSettings(); });
-}
-async function refreshAA() {
-  try {
-    const r = await fetch(AA_LIVE, { cache: 'no-store' });
-    if (!r.ok) throw 0;
-    const j = (await r.json()).response;
-    const e = Object.entries(j).filter(([k]) => /^\d+$/.test(k)).map(([, v]) => v);
-    if (e.length < 100) throw 0;
-    const pick = f => e.filter(v => v[f] && v.countryCode).map(v => v.countryCode);
-    const aa = { fetched: today(), aaModified: j.lastModified, warning: pick('warning'), partial: pick('partialWarning'), situation: pick('situationWarning') };
-    await (await caches.open('passage-data')).put('live-aa', new Response(JSON.stringify(aa), { headers: { 'x-fetched': String(Date.now()) } }));
-    AA = aa; dataInfo.aa = 'live'; dataInfo.aaStamp = Date.now();
-    return true;
-  } catch { return false; }
+  if (!dataInfo.stamp || Date.now() - dataInfo.stamp > 7 * 864e5) refreshLive().then(() => { paint(); renderSettings(); });
 }
 async function refreshLive() {
-  await refreshAA();
   try {
     const r = await fetch(CSV_LIVE, { cache: 'no-store' });
     if (!r.ok) throw 0;
@@ -161,14 +143,8 @@ function reqText(v) {
   return { 'visa free': 'visumfrei', 'eta': 'ETA / elektronische Reisegenehmigung', 'e-visa': 'e-Visum (online beantragen)', 'visa on arrival': 'Visum bei Ankunft', 'visa required': 'Visum vorab erforderlich', 'no admission': 'Einreise nicht gestattet' }[v] || v;
 }
 const citizenships = () => [...new Set(st.docs.filter(d => d.type === 'passport').map(d => d.countries[0]).filter(Boolean))];
-const restricted = c => AA.warning.includes(c) || (OVR.manualRestricted || []).includes(c);
-function warnText(c) {
-  if (AA.warning.includes(c)) return 'Reisewarnung des Auswärtigen Amts';
-  if ((OVR.manualRestricted || []).includes(c)) return 'Einreise faktisch nicht möglich (manuell hinterlegt)';
-  if (AA.partial.includes(c)) return 'Teilreisewarnung des Auswärtigen Amts';
-  if (AA.situation.includes(c)) return 'Sicherheitshinweis des Auswärtigen Amts';
-  return '';
-}
+const restricted = c => (OVR.manualRestricted || []).includes(c);
+const warnText = c => restricted(c) ? 'Für Touristen praktisch nicht bereisbar (manuell festgelegt, data/overrides.json)' : '';
 function baseClass(dest, pps) {
   if (pps.includes(dest)) return 'green';
   if (restricted(dest)) return 'red';
@@ -321,7 +297,6 @@ function openCountry(c) {
   const sug = base === 'yellow' ? 'eta' : base === 'orange' ? 'visa' : 'eta';
   const s = sheet(cname(c), '', 'Fertig', `
     <div style="text-align:center;padding:4px 0 14px"><div class="big-flag">${flag(c)}</div><div style="margin-top:8px"><span class="pill ${base}">${label[base]}</span></div></div>
-    ${warnText(c) ? `<div class="banner" style="margin-top:0">⚠️ ${esc(warnText(c))}</div>` : ''}
     ${pps.length ? `<div class="group-title" style="margin-top:4px">Einreise je Staatsbürgerschaft</div><div class="group">${rows}</div>` : '<div class="foot" style="margin:0 0 16px">Noch keine Staatsbürgerschaft hinterlegt.</div>'}
     ${docs.length ? `<div class="group-title">Meine Dokumente</div><div class="group">${docRows}</div>` : ''}
     <button class="btn" id="cAdd">Eintrag für ${esc(cname(c))} hinzufügen</button>
@@ -492,7 +467,7 @@ function renderSettings() {
     <div class="group-title">Reisedaten</div>
     <div class="group plain">
       <div class="row"><div class="meta"><b>Quelle</b><small>Passport Index Dataset (GitHub, ilyankou) · ${dataInfo.src === 'live' ? 'live abgerufen ' + when : 'eingebauter Stand ' + (dataInfo.snap || '')}</small></div></div>
-      <div class="row"><div class="meta"><b>Reisewarnungen (rot)</b><small>Auswärtiges Amt, Open Data · ${dataInfo.aa === 'live' ? 'live abgerufen ' + new Date(dataInfo.aaStamp).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : 'eingebauter Stand ' + (AA.fetched || '')}${OVR.manualRestricted?.length ? ' · zusätzlich manuell: ' + OVR.manualRestricted.map(cname).join(', ') : ''}</small></div></div>
+      <div class="row"><div class="meta"><b>Rot (manuell festgelegt)</b><small>${(OVR.manualRestricted || []).map(cname).join(', ') || '–'} · Änderung: data/overrides.json</small></div></div>
       <div class="row"><div class="meta"><b>Besetzte Gebiete (Schraffur)</b><small>DeepState (OSINT, kein amtlicher Datensatz), Stand ${OCC ? OCC.fetched : '–'}</small></div></div>
       <button class="row" id="bData"><div class="meta"><b>Jetzt aktualisieren</b></div><span class="chev">›</span></button>
     </div>

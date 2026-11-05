@@ -1,6 +1,5 @@
 {
-  "_hinweis": "Rot kommt aus den Reisewarnungen des Auswärtigen Amts (Live-Abruf bzw. data/travelwarnings.json). Hier nur Ergänzungen: manualRestricted = zusätzlich rot (Nordkorea: Einreise für Touristen faktisch nicht möglich; AA führt dafür keine Reisewarnung). byPassport = Korrekturen veralteter Einträge der Visa-Quelle (Pass -> Ziel -> eta | e-visa | visa required | visa on arrival | visa free).",
-  "manualRestricted": ["KP"],
-  "byPassport": { "DE": { "GB": "eta" } },
-  "_quellen": { "DE-GB": "https://www.gov.uk/eta (ETA-Pflicht für Deutsche seit 02.04.2025)" }
+  "_hinweis": "manualRestricted = rot (nicht regulär bereisbar), von dir festgelegt: Nordkorea, Russland. Zusätzlich rot: Einträge der Visa-Quelle mit „no admission“. byPassport = Korrekturen der Visa-Quelle (Pass -> Ziel -> eta | e-visa | visa required | visa on arrival | visa free).",
+  "manualRestricted": ["KP", "RU"],
+  "byPassport": { "DE": { "GB": "eta" } }
 }

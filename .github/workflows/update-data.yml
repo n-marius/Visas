@@ -15,9 +15,8 @@ jobs:
           head -1 /tmp/new.csv | grep -q '^Passport,Destination,Requirement' && [ "$(wc -l < /tmp/new.csv)" -gt 30000 ]
           cp /tmp/new.csv data/passport-index-tidy-iso2.csv
           echo "{\"snapshot\":\"$(date +%F)\"}" > data/meta.json
-      - name: Reisewarnungen (Auswärtiges Amt) und besetzte Gebiete
+      - name: Besetzte Gebiete
         run: |
-          node tools/update-aa.mjs
           npm i --no-save world-atlas topojson-client d3-geo i18n-iso-countries
           node tools/build-occupied.mjs || echo "DeepState nicht erreichbar, alter Stand bleibt"
       - name: Commit
