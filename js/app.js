@@ -1,6 +1,7 @@
 (() => {
 'use strict';
 const KEY = 'passage.v1';
+const APP_VERSION = '2026-11-05.6';
 const CSV_LIVE = 'https://raw.githubusercontent.com/ilyankou/passport-index-dataset/master/passport-index-tidy-iso2.csv';
 const CSV_LOCAL = 'data/passport-index-tidy-iso2.csv';
 const SCHENGEN = ['AT','BE','BG','HR','CZ','DK','EE','FI','FR','DE','GR','HU','IS','IT','LV','LI','LT','LU','MT','NL','NO','PL','PT','RO','SK','SI','ES','SE','CH'];
@@ -510,6 +511,11 @@ function renderSettings() {
     </div>
     <input type="file" id="fImp" accept="application/json" hidden>
     <div class="foot">Alle Einträge liegen nur lokal auf diesem Gerät. Bitte gelegentlich eine Sicherung exportieren.</div>
+    <div class="group-title">App</div>
+    <div class="group plain">
+      <div class="row"><div class="meta"><b>Version</b><small>${APP_VERSION}</small></div></div>
+      <button class="row" id="bReload"><div class="meta"><b>Neu laden (Zwischenspeicher leeren)</b><small>Deine Einträge bleiben erhalten</small></div><span class="chev">›</span></button>
+    </div>
     <div class="foot" style="margin-top:0">Angaben zu Einreisebestimmungen ohne Gewähr. Karte: Natural Earth.</div>`;
   const root = $('#settingsBody');
   $$('[data-s]', root).forEach(b => b.onclick = () => { const k = b.dataset.s; st.s.remind[k] = Math.min(36, Math.max(1, st.s.remind[k] + Number(b.dataset.d))); save(); renderSettings(); renderList(); checkReminders(); });
@@ -519,6 +525,10 @@ function renderSettings() {
   $('#pUrl').onchange = e => { st.s.push.url = e.target.value.trim(); save(); };
   $('#pKey').onchange = e => { st.s.push.key = e.target.value.trim(); save(); };
   $('#bPush').onclick = async () => { try { st.s.push.url = $('#pUrl').value.trim(); st.s.push.key = $('#pKey').value.trim(); await pushSubscribe(); alert('Push aktiviert.'); } catch (e) { alert('Fehler: ' + e.message); } };
+  $('#bReload').onclick = async () => {
+    try { for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); for (const k of await caches.keys()) if (k !== 'passage-data') await caches.delete(k); } catch {}
+    location.reload();
+  };
   $('#bExp').onclick = () => shareFile(`passage-sicherung-${today()}.json`, 'application/json', JSON.stringify({ docs: st.docs, s: st.s }, null, 2));
   $('#bImp').onclick = () => $('#fImp').click();
   $('#fImp').onchange = async e => {
@@ -555,6 +565,14 @@ function wire() {
   try { await loadData(); initMap(); render(); } catch (e) { $('#mapWrap').insertAdjacentHTML('afterbegin', '<div class="hint">Kartendaten konnten nicht geladen werden.</div>'); console.error(e); }
   checkReminders();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkReminders(); renderList(); } });
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) {
+    // Neue Version: Service Worker übernimmt -> Seite einmal neu laden
+    const had = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (had && !sessionStorage.getItem('reloaded')) { sessionStorage.setItem('reloaded', '1'); location.reload(); } });
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      reg.update().catch(() => {});
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+    }).catch(() => {});
+  }
 })();
 })();
