@@ -174,7 +174,8 @@ function classOf(dest, mode) {
 }
 
 /* ---------- Karte ---------- */
-let occP, occB = [], mapSvg, mapG, view = { k: 1, x: 0, y: 0 }, selected = null;
+const MAXK = 80;
+let marksG, occP, occB = [], mapSvg, mapG, view = { k: 1, x: 0, y: 0 }, selected = null;
 const LEG = {
   free: [['green', 'Frei bereisbar'], ['yellow', 'ETA / VoA'], ['orange', 'e-Visum'], ['dark', 'Visum'], ['red', 'Nicht regulär bereisbar'], ['grey', 'Keine Daten']],
   docs: [['green', 'Frei / Dokument vorhanden'], ['yellow', 'ETA / VoA'], ['orange', 'e-Visum'], ['dark', 'Visum'], ['red', 'Nicht regulär bereisbar']],
@@ -204,20 +205,29 @@ function initMap() {
     occP = mk(OCC.ua + OCC.ge, 'occ');
   }
   wrap.prepend(mapSvg);
+  // Marker für sehr kleine Staaten/Gebiete (Punkt in konstanter Bildschirmgröße, antippbar)
+  marksG = document.createElementNS(ns, 'g');
+  for (const [c, [x, y, dim]] of Object.entries(WORLD.marks || {})) {
+    const m = document.createElementNS(ns, 'circle');
+    m.setAttribute('cx', x); m.setAttribute('cy', y); m.dataset.c = c; m.dataset.dim = dim; m.setAttribute('class', 'c-grey');
+    marksG.appendChild(m);
+  }
+  mapG.appendChild(marksG);
   // Gesten
   const ptrs = new Map(); let moved = false, startDist = 0, startK = 1, down = null;
   const size = () => { const r = wrap.getBoundingClientRect(); return [r.width, r.height]; };
   const apply = () => {
     const [w, h] = size();
-    view.k = Math.min(12, Math.max(1, view.k));
+    view.k = Math.min(MAXK, Math.max(1, view.k));
     view.x = Math.min(0, Math.max(-w * (view.k - 1), view.x)); view.y = Math.min(0, Math.max(-h * (view.k - 1), view.y));
+    if (marksG) { const px = w / WORLD.w, r = (3.4 / px / view.k).toFixed(3); for (const m of marksG.children) { m.setAttribute('r', r); m.style.display = Number(m.dataset.dim) * px * view.k > 16 ? 'none' : ''; } }
     mapSvg.style.setProperty('--sw', (0.6 * WORLD.w / w / view.k).toFixed(3));
     mapSvg.style.transformOrigin = '0 0';
     mapSvg.style.transform = `translate(${view.x}px,${view.y}px) scale(${view.k})`;
   };
   const zoomAt = (f, cx, cy) => {
     const r = wrap.getBoundingClientRect();
-    const nk = Math.min(12, Math.max(1, view.k * f)), real = nk / view.k;
+    const nk = Math.min(MAXK, Math.max(1, view.k * f)), real = nk / view.k;
     const px = cx - r.left, py = cy - r.top;
     view.x = px - (px - view.x) * real; view.y = py - (py - view.y) * real; view.k = nk; apply();
   };
@@ -255,7 +265,7 @@ function initMap() {
     const p = mapG.querySelector(`path[data-c="${c}"]`); if (!p) return;
     const [w, h] = size(), bb = p.getBBox();
     const sc = Math.min(w / WORLD.w, h / WORLD.h), ox = (w - WORLD.w * sc) / 2, oy = (h - WORLD.h * sc) / 2;
-    const k = Math.min(8, Math.max(1.5, 0.45 * Math.min(WORLD.w / bb.width, WORLD.h / bb.height)));
+    const k = Math.min(60, Math.max(1.5, 0.45 * Math.min(WORLD.w / bb.width, WORLD.h / bb.height)));
     view.k = k; view.x = w / 2 - (ox + (bb.x + bb.width / 2) * sc) * k; view.y = h / 2 - (oy + (bb.y + bb.height / 2) * sc) * k;
     apply();
   };
@@ -264,7 +274,7 @@ function paint() {
   if (!mapG) return;
   const mode = st.s.mode;
   if (occP) { occP.setAttribute('fill', `url(#h-${classOf('RU', mode)})`); occB[0].setAttribute('fill', COL[classOf('UA', mode)]); occB[1].setAttribute('fill', COL[classOf('GE', mode)]); }
-  for (const p of mapG.children) if (p.dataset.c) p.setAttribute('class', 'c-' + classOf(p.dataset.c, mode) + (p.dataset.c === selected ? ' sel' : ''));
+  for (const p of [...mapG.children, ...(marksG ? marksG.children : [])]) if (p.dataset.c) p.setAttribute('class', 'c-' + classOf(p.dataset.c, mode) + (p.dataset.c === selected ? ' sel' : ''));
   $$('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
   $('#legend').innerHTML = LEG[mode].map(([c, t]) => `<span><i style="background:${COL[c]}"></i>${t}</span>`).join('') + (OCC ? HATCH : '');
   const hint = $('#mapHint');
