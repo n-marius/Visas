@@ -28,7 +28,22 @@ const parse = s => { const [y, m, d] = s.split('-').map(Number); return new Date
 const daysTo = s => Math.round((parse(s) - parse(today())) / 864e5);
 const addMonths = (s, n) => { const d = parse(s); const day = d.getDate(); d.setDate(1); d.setMonth(d.getMonth() + n); d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate())); return iso(d); };
 const fmtDate = s => s ? parse(s).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '–';
-const remindOn = d => addMonths(d.expiry, -st.s.remind[d.type]);
+const addDays = (s, n) => iso(new Date(parse(s).getTime() + n * 864e5 + 36e5 * 0));
+const passById = id => st.docs.find(x => x.id === id && x.type === 'passport');
+// Ein Pass gilt als ersetzt, sobald ein Nachfolger („ersetzt Pass …“) gültig ist (oder kein Datum hat).
+function supersededOn(p) {
+  let r = null;
+  for (const x of st.docs) if (x.type === 'passport' && x.replaces === p.id) { const v = x.validFrom || addDays(today(), 0); if (r === null || v < r) r = v; }
+  return r;
+}
+// Effektives Ablaufdatum: eigenes Datum, begrenzt durch Ablauf/Ersetzung des gebundenen Passes
+function eff(d) {
+  let e = d.expiry;
+  const p = d.type === 'passport' ? d : passById(d.passportId);
+  if (p) { if (d !== p && p.expiry < e) e = p.expiry; const sup = supersededOn(p); if (sup && addDays(sup, -1) < e) e = addDays(sup, -1); }
+  return e;
+}
+const remindOn = d => addMonths(eff(d), -st.s.remind[d.type]);
 function fmtLeft(n) {
   if (n < 0) return `abgelaufen (${-n} T.)`;
   if (n === 0) return 'läuft heute ab';
@@ -37,13 +52,16 @@ function fmtLeft(n) {
   return `noch ${(n / 365.25).toFixed(1).replace('.', ',')} J.`;
 }
 const state = d => {
-  const n = daysTo(d.expiry);
+  const n = daysTo(eff(d));
   if (n < 0) return 'exp';
   if (today() >= remindOn(d)) return 'due';
   if (d.validFrom && today() < d.validFrom) return 'future';
   return 'ok';
 };
-const active = d => (!d.validFrom || today() >= d.validFrom) && today() <= d.expiry;
+const active = d => {
+  const p = d.type === 'passport' ? null : passById(d.passportId);
+  return (!d.validFrom || today() >= d.validFrom) && today() <= eff(d) && (!p || !p.validFrom || today() >= p.validFrom);
+};
 
 /* ---------- Länder ---------- */
 let dn; try { dn = new Intl.DisplayNames(['de'], { type: 'region' }); } catch {}
@@ -260,8 +278,8 @@ function openCountry(c) {
   const base = baseClass(c, pps);
   const label = { green: 'Frei bereisbar', yellow: 'ETA / e-Visum / VoA', orange: 'Visum erforderlich', red: 'Nicht regulär bereisbar', grey: 'Keine Daten' };
   const rows = pps.map(p => `<div class="row"><span class="ico">${flag(p)}</span><div class="meta"><b>${esc(cname(p))}</b><small>${esc(restricted(c) && p !== c ? 'Einreise stark eingeschränkt / Reisewarnung' : reqText(reqVal(p, c)))}</small></div></div>`).join('');
-  const docs = st.docs.filter(d => d.countries.includes(c)).sort((a, b) => a.expiry.localeCompare(b.expiry));
-  const docRows = docs.map(d => `<button class="row" data-edit="${d.id}"><span class="ico ${d.type}">${TYPES[d.type].icon}</span><div class="meta"><b>${esc(d.title || TYPES[d.type].label)}</b><small>bis ${fmtDate(d.expiry)}</small></div><span class="badge ${state(d)}">${fmtLeft(daysTo(d.expiry))}</span></button>`).join('');
+  const docs = st.docs.filter(d => d.countries.includes(c)).sort((a, b) => eff(a).localeCompare(eff(b)));
+  const docRows = docs.map(d => `<button class="row" data-edit="${d.id}"><span class="ico ${d.type}">${TYPES[d.type].icon}</span><div class="meta"><b>${esc(d.title || TYPES[d.type].label)}</b><small>bis ${fmtDate(eff(d))}</small></div><span class="badge ${state(d)}">${fmtLeft(daysTo(eff(d)))}</span></button>`).join('');
   const sug = base === 'yellow' ? 'eta' : base === 'orange' ? 'visa' : 'eta';
   const s = sheet(cname(c), '', 'Fertig', `
     <div style="text-align:center;padding:4px 0 14px"><div class="big-flag">${flag(c)}</div><div style="margin-top:8px"><span class="pill ${base}">${label[base]}</span></div></div>
@@ -286,10 +304,14 @@ function openForm(doc, preset = {}) {
   const read = () => {
     const g = n => { const e = $(`[name=${n}]`, s.body); return e ? e.value.trim() : d[n]; };
     d.title = g('title'); d.number = g('number'); d.validFrom = g('validFrom'); d.expiry = g('expiry'); d.notes = g('notes');
+    const rp = $('[name=replaces]', s.body); if (rp) d.replaces = rp.value; const pi = $('[name=passportId]', s.body); if (pi) d.passportId = pi.value;
+    if (d.type === 'passport') delete d.passportId; else delete d.replaces;
     const sel = $('[name=pcountry]', s.body); if (sel) d.countries = sel.value ? [sel.value] : [];
   };
   const draw = () => {
     const pass = d.type === 'passport';
+    const others = st.docs.filter(x => x.type === 'passport' && x.id !== d.id);
+    const pl = o => `${cname(o.countries[0])} – ${o.title || 'Pass'} (bis ${fmtDate(o.expiry)})`;
     const opts = ALL.map(c => `<option value="${c}" ${d.countries[0] === c ? 'selected' : ''}>${esc(cname(c))}</option>`).join('');
     s.body.innerHTML = `
       <div class="seg" id="fType" style="margin-bottom:16px">${Object.entries(TYPES).map(([k, v]) => `<button data-t="${k}" class="${d.type === k ? 'on' : ''}">${k === 'passport' ? 'Pass' : v.short}</button>`).join('')}</div>
@@ -301,6 +323,7 @@ function openForm(doc, preset = {}) {
           <button type="button" id="addSch" style="color:var(--accent);text-align:left;margin-top:8px;font-size:15px">+ Schengen-Raum (29 Staaten)</button>
         </div>`}
       </div>
+      ${pass ? (others.length ? `<div class="group"><div class="row field"><label>Ersetzt Pass</label><select name="replaces"><option value="">– keinen –</option>${others.map(o => `<option value="${o.id}" ${d.replaces === o.id ? 'selected' : ''}>${esc(pl(o))}</option>`).join('')}</select></div></div><div class="foot" style="margin-top:-12px">Der ersetzte Pass und alle daran gebundenen ETA/Visa werden ungültig, sobald dieser Pass gilt (ab „Gültig ab“, sonst sofort).</div>` : '') : (others.length ? `<div class="group"><div class="row field"><label>An Pass gebunden</label><select name="passportId"><option value="">– nicht gebunden –</option>${others.map(o => `<option value="${o.id}" ${d.passportId === o.id ? 'selected' : ''}>${esc(pl(o))}</option>`).join('')}</select></div></div><div class="foot" style="margin-top:-12px">Läuft der Pass ab oder wird er durch einen neuen ersetzt, wird dieser Eintrag automatisch ungültig.</div>` : '')}
       <div class="group">
         <div class="row field"><label>Bezeichnung</label><input type="text" name="title" value="${esc(d.title)}" placeholder="${pass ? 'z. B. Reisepass' : 'z. B. UK ETA'}"></div>
         <div class="row field"><label>Nummer</label><input type="text" name="number" value="${esc(d.number)}" placeholder="optional"></div>
@@ -323,7 +346,7 @@ function openForm(doc, preset = {}) {
       box.innerHTML = hits.map(c => `<button type="button" data-c="${c}">${flag(c)} ${esc(cname(c))}</button>`).join('');
       $$('button', box).forEach(b => b.onclick = () => { read(); d.countries.push(b.dataset.c); draw(); });
     };
-    const del = $('#del', s.body); if (del) del.onclick = () => { if (confirm('Eintrag wirklich löschen?')) { st.docs = st.docs.filter(x => x.id !== d.id); save(); s.close(); render(); } };
+    const del = $('#del', s.body); if (del) del.onclick = () => { if (confirm('Eintrag wirklich löschen?')) { st.docs = st.docs.filter(x => x.id !== d.id).map(x => { if (x.passportId === d.id) delete x.passportId; if (x.replaces === d.id) delete x.replaces; return x; }); save(); s.close(); render(); } };
   };
   draw();
   s.right.onclick = () => {
@@ -344,12 +367,12 @@ function openForm(doc, preset = {}) {
 function renderList() {
   $$('#filterSeg button').forEach(b => b.classList.toggle('on', b.dataset.f === st.s.filter));
   const f = st.s.filter;
-  const docs = st.docs.filter(d => f === 'all' || d.type === f).sort((a, b) => a.expiry.localeCompare(b.expiry));
-  const due = st.docs.filter(d => state(d) === 'due' || state(d) === 'exp' && daysTo(d.expiry) > -90);
+  const docs = st.docs.filter(d => f === 'all' || d.type === f).sort((a, b) => eff(a).localeCompare(eff(b)));
+  const due = st.docs.filter(d => state(d) === 'due' || state(d) === 'exp' && daysTo(eff(d)) > -90);
   let h = '';
   if (due.length) h += `<div class="banner">⏰ ${due.length} Eintrag${due.length === 1 ? '' : 'e'} laufen bald ab oder sind kürzlich abgelaufen.</div>`;
   if (!docs.length) h += `<div class="empty"><div class="big">🛂</div><p>${st.docs.length ? 'Keine Einträge in dieser Kategorie.' : 'Noch keine Einträge.<br>Lege deinen Pass, ETAs und Visa an – die Karte und Erinnerungen entstehen daraus.'}</p></div>`;
-  else h += `<div class="group">${docs.map(d => `<button class="row" data-id="${d.id}"><span class="ico ${d.type}">${TYPES[d.type].icon}</span><div class="meta"><b>${esc(d.title || TYPES[d.type].label)}</b><small>${esc(cdesc(d.countries))} · bis ${fmtDate(d.expiry)}</small></div><span class="badge ${state(d)}">${state(d) === 'future' ? 'ab ' + fmtDate(d.validFrom) : fmtLeft(daysTo(d.expiry))}</span></button>`).join('')}</div><div class="foot" style="margin-top:-8px">Sortiert nach Ablaufdatum, früheste zuerst.</div>`;
+  else h += `<div class="group">${docs.map(d => `<button class="row" data-id="${d.id}"><span class="ico ${d.type}">${TYPES[d.type].icon}</span><div class="meta"><b>${esc(d.title || TYPES[d.type].label)}</b><small>${esc(cdesc(d.countries))} · bis ${fmtDate(eff(d))}</small></div><span class="badge ${state(d)}">${state(d) === 'future' ? 'ab ' + fmtDate(d.validFrom) : fmtLeft(daysTo(eff(d)))}</span></button>`).join('')}</div><div class="foot" style="margin-top:-8px">Sortiert nach Ablaufdatum, früheste zuerst.</div>`;
   $('#listBody').innerHTML = h;
   $$('#listBody [data-id]').forEach(b => b.onclick = () => openForm(st.docs.find(x => x.id === b.dataset.id)));
 }
@@ -362,13 +385,13 @@ async function notify(title, body, tag) {
   } catch {}
 }
 function checkReminders() {
-  const due = st.docs.filter(d => { const s = state(d); return s === 'due' || (s === 'exp' && daysTo(d.expiry) > -30); });
+  const due = st.docs.filter(d => { const s = state(d); return s === 'due' || (s === 'exp' && daysTo(eff(d)) > -30); });
   try { if ('setAppBadge' in navigator) due.length ? navigator.setAppBadge(due.length) : navigator.clearAppBadge(); } catch {}
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   for (const d of due) {
     if (st.s.notified[d.id] === today()) continue;
     st.s.notified[d.id] = today();
-    notify(`${d.title || TYPES[d.type].label} (${cdesc(d.countries)})`, `${fmtLeft(daysTo(d.expiry))} – Ablauf am ${fmtDate(d.expiry)}`, d.id);
+    notify(`${d.title || TYPES[d.type].label} (${cdesc(d.countries)})`, `${fmtLeft(daysTo(eff(d)))} – Ablauf am ${fmtDate(eff(d))}`, d.id);
   }
   try { localStorage.setItem(KEY, JSON.stringify(st)); } catch {}
 }
@@ -376,10 +399,10 @@ function ics() {
   const dt = s => s.replace(/-/g, '');
   const nx = s => dt(iso(new Date(parse(s).getTime() + 864e5 + 3600e3)));
   const ev = st.docs.map(d => {
-    const n = Math.max(1, Math.round((parse(d.expiry) - parse(remindOn(d))) / 864e5));
+    const n = Math.max(1, Math.round((parse(eff(d)) - parse(remindOn(d))) / 864e5));
     const title = `${d.title || TYPES[d.type].label} (${cdesc(d.countries)}) läuft ab`;
     const al = (trig, txt) => `BEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:${txt}\r\nTRIGGER:${trig}\r\nEND:VALARM\r\n`;
-    return `BEGIN:VEVENT\r\nUID:${d.id}@passage\r\nDTSTAMP:${new Date().toISOString().replace(/[-:]|\.\d+/g, '')}\r\nDTSTART;VALUE=DATE:${dt(d.expiry)}\r\nDTEND;VALUE=DATE:${nx(d.expiry)}\r\nSUMMARY:${title.replace(/[,;]/g, ' ')}\r\n` +
+    return `BEGIN:VEVENT\r\nUID:${d.id}@passage\r\nDTSTAMP:${new Date().toISOString().replace(/[-:]|\.\d+/g, '')}\r\nDTSTART;VALUE=DATE:${dt(eff(d))}\r\nDTEND;VALUE=DATE:${nx(eff(d))}\r\nSUMMARY:${title.replace(/[,;]/g, ' ')}\r\n` +
       al(`-P${n - 1}DT15H`, 'Erinnerung: ' + title.replace(/[,;]/g, ' ')) + (n > 8 ? al('-P6DT15H', 'In einer Woche: ' + title.replace(/[,;]/g, ' ')) : '') + `END:VEVENT\r\n`;
   }).join('');
   return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Passage//DE\r\nCALSCALE:GREGORIAN\r\n${ev}END:VCALENDAR\r\n`;
@@ -405,7 +428,7 @@ async function pushSync(sub) {
   try {
     const reg = await navigator.serviceWorker.ready;
     sub = sub || await reg.pushManager.getSubscription(); if (!sub) return;
-    const reminders = st.docs.map(d => ({ id: d.id, title: `${d.title || TYPES[d.type].label} (${cdesc(d.countries)})`, remindOn: remindOn(d), expiry: d.expiry }));
+    const reminders = st.docs.map(d => ({ id: d.id, title: `${d.title || TYPES[d.type].label} (${cdesc(d.countries)})`, remindOn: remindOn(d), expiry: eff(d) }));
     const r = await fetch(url.replace(/\/$/, '') + '/subscribe', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ subscription: sub, reminders }) });
     if (!r.ok) throw new Error('Server: ' + r.status);
   } catch (e) { if (sub) throw e; }
