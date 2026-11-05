@@ -78,7 +78,7 @@ function cdesc(a) {
 }
 
 /* ---------- Visa-Daten ---------- */
-let V = {}, OVR = { manualRestricted: [], byPassport: {} }, OCC = null, WORLD = null, ALL = [], dataInfo = { src: '', stamp: null, snap: null };
+let V = {}, OVR = { manualRestricted: [], byPassport: {} }, OCC = null, VER = {}, WORLD = null, ALL = [], dataInfo = { src: '', stamp: null, snap: null };
 function setVisa(text) {
   const out = {};
   const lines = text.split('\n');
@@ -90,13 +90,14 @@ function setVisa(text) {
   V = out;
 }
 async function loadData() {
-  const [w, o, m, oc] = await Promise.all([
+  const [w, o, m, oc, ver] = await Promise.all([
     fetch('data/world.json').then(r => r.json()),
     fetch('data/overrides.json').then(r => r.json()).catch(() => OVR),
     fetch('data/meta.json').then(r => r.json()).catch(() => ({})),
-    fetch('data/occupied.json').then(r => r.json()).catch(() => null)
+    fetch('data/occupied.json').then(r => r.json()).catch(() => null),
+    fetch('data/verified.json').then(r => r.json()).catch(() => ({ e: {} }))
   ]);
-  OCC = oc;
+  OCC = oc; VER = ver.e || {};
   WORLD = w; OVR = o; dataInfo.snap = m.snapshot || null;
   let text = null;
   try {
@@ -138,7 +139,8 @@ function reqClass(v) {
   return 'dark';
 }
 // Manuelle Einstufung je Pass und Ziel hat Vorrang (Länderdetail), sonst Zuordnung aus der Quelle
-const clsFor = (pp, dest) => st.s.cls[pp + '>' + dest] || reqClass(reqVal(pp, dest));
+const verOk = k => VER[k] && VER[k].q !== 'low' && VER[k].c !== 'unklar' ? VER[k].c : null;
+const clsFor = (pp, dest) => st.s.cls[pp + '>' + dest] || verOk(pp + '>' + dest) || reqClass(reqVal(pp, dest));
 function reqText(v) {
   if (v == null) return 'keine Daten';
   if (v === '-1') return 'Eigener Staat';
@@ -305,7 +307,8 @@ function openCountry(c) {
   const base = baseClass(c, pps);
   const label = { green: 'Frei bereisbar', yellow: 'ETA / VoA', orange: 'e-Visum', dark: 'Visum erforderlich', red: 'Nicht regulär bereisbar', grey: 'Keine Daten' };
   const ovOpts = (p) => [['', 'Automatisch'], ['green', 'Frei'], ['yellow', 'ETA / VoA'], ['orange', 'e-Visum'], ['dark', 'Visum']].map(([v, t]) => `<option value="${v}" ${(st.s.cls[p + '>' + c] || '') === v ? 'selected' : ''}>${t}</option>`).join('');
-  const rows = pps.filter(p => p !== c).map(p => `<div class="row"><span class="ico">${flag(p)}</span><div class="meta"><b>${esc(cname(p))}</b><small>${esc(restricted(c) ? warnText(c) : reqText(reqVal(p, c)))}</small></div><select class="ovsel" data-ov="${p}" aria-label="Einstufung">${ovOpts(p)}</select></div>`).join('');
+  const vnote = (p, d) => { const v = VER[p + '>' + d]; if (!v) return ''; const lab = v.c === 'unklar' ? 'Unklar' : v.q === 'low' ? 'Unbestätigter Hinweis' : 'Geprüft'; return `<small class="vnote">${lab}: ${esc(v.n)}${v.s ? ` <a href="${esc(v.s.split(';')[0])}" target="_blank" rel="noopener">Quelle</a>` : ''}</small>`; };
+  const rows = pps.filter(p => p !== c).map(p => `<div class="row"><span class="ico">${flag(p)}</span><div class="meta"><b>${esc(cname(p))}</b>${restricted(c) || !verOk(p + '>' + c) ? `<small>${esc(restricted(c) ? warnText(c) : reqText(reqVal(p, c)))}</small>` : ''}${vnote(p, c)}</div><select class="ovsel" data-ov="${p}" aria-label="Einstufung">${ovOpts(p)}</select></div>`).join('');
   const docs = st.docs.filter(d => d.countries.includes(c)).sort((a, b) => eff(a).localeCompare(eff(b)));
   const docRows = docs.map(d => `<button class="row" data-edit="${d.id}"><span class="ico ${d.type}">${TYPES[d.type].icon}</span><div class="meta"><b>${esc(d.title || TYPES[d.type].label)}</b><small>bis ${fmtDate(eff(d))}</small></div><span class="badge ${state(d)}">${fmtLeft(daysTo(eff(d)))}</span></button>`).join('');
   const sug = { yellow: 'eta', orange: 'evisa', dark: 'visa' }[base] || 'eta';

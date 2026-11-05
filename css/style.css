@@ -102,3 +102,4 @@ button{border:0;background:none;cursor:pointer;padding:0}
 .legend i.hatch{border-radius:2px;background:repeating-linear-gradient(45deg,#e5484d 0 2px,#fff 2px 4px);border:.5px solid #bbb}
 .ovsel{border:0;background:#f2f2f7;border-radius:8px;padding:5px 6px;font-size:13px;color:var(--accent);max-width:112px;-webkit-appearance:none;appearance:none}
 .seg button{padding:6px 2px}
+.vnote{display:block;margin-top:2px;color:#8a5a00!important}.vnote a{color:var(--accent)}

@@ -32,3 +32,6 @@ Der Worker prüft täglich 07:00 UTC und sendet am Erinnerungstag sowie 30/7/1/0
 
 ## Entwicklung
 `python3 -m http.server` im Ordner starten. Version des Service Workers in `sw.js` (`V`) bei Änderungen erhöhen.
+
+## Geprüfte Einstufungen
+`data/verified.json`: Abweichungen vom Passport Index für Deutschland und Ukraine (199 Zielländer je Pass, von Agenten recherchiert und stichprobenartig nachgeprüft). Nur Einträge mit Sicherheit `high`/`mid` ändern die Farbe; `low` und `unklar` erscheinen nur als Hinweis im Länderdetail. Belege sind überwiegend Wikipedia-Länderseiten und Reiseportale, nur teilweise amtliche Seiten; amtlich bestätigt ist die Mehrzahl **nicht**.

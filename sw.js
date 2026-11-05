@@ -1,5 +1,5 @@
 const V = 'passage-v5';
-const SHELL = ['./','index.html','css/style.css','js/app.js','data/world.json','data/passport-index-tidy-iso2.csv','data/overrides.json','data/meta.json','data/occupied.json','manifest.webmanifest','icons/logo.svg','icons/icon-192.png','icons/icon-512.png','icons/apple-touch-icon.png'];
+const SHELL = ['./','index.html','css/style.css','js/app.js','data/world.json','data/passport-index-tidy-iso2.csv','data/overrides.json','data/meta.json','data/occupied.json','data/verified.json','manifest.webmanifest','icons/logo.svg','icons/icon-192.png','icons/icon-512.png','icons/apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(k => Promise.all(k.filter(n => n.startsWith('passage-v') && n !== V).map(n => caches.delete(n)))).then(() => self.clients.claim())); });
 // Netzwerk zuerst (am HTTP-Cache vorbei, GitHub Pages cached 10 Min.), bei Offline aus dem Cache.
