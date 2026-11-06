@@ -25,7 +25,9 @@
         <button data-mode="docs">Mit Dok.</button>
         <button data-mode="only">Nur Dok.</button>
         <button data-mode="cmp">Vergleich</button>
+        <button data-mode="trips">Bereist</button>
       </div>
+      <div class="seg" id="tripSeg" hidden style="margin-top:8px"><button data-v="m">Marius</button><button data-v="a">Agnessa</button><button data-v="both">Beide</button><button data-v="tog">Gemeinsam</button></div>
       <div class="search"><input id="mapSearch" type="search" placeholder="Land suchen" autocomplete="off"><div id="mapSuggest" class="suggest" hidden></div></div>
     </header>
     <div class="mapwrap" id="mapWrap">
@@ -45,6 +47,14 @@
     <div class="scroll" id="listBody"></div>
   </section>
 
+  <section class="view" id="view-trips" hidden>
+    <header class="nav">
+      <div class="nav-top"><img class="logo" src="icons/logo.svg" alt=""><h1>Reisen</h1></div>
+      <div class="seg" id="personSeg"><button data-p="m">Marius</button><button data-p="a">Agnessa</button></div>
+    </header>
+    <div class="scroll" id="tripsBody"></div>
+  </section>
+
   <section class="view" id="view-settings" hidden>
     <header class="nav"><div class="nav-top"><img class="logo" src="icons/logo.svg" alt=""><h1>Einstellungen</h1></div></header>
     <div class="scroll" id="settingsBody"></div>
@@ -54,6 +64,7 @@
 <nav class="tabbar" id="tabbar">
   <button data-tab="map" class="on"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg><span>Karte</span></button>
   <button data-tab="list"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span>Dokumente</span></button>
+  <button data-tab="trips"><svg viewBox="0 0 24 24"><path d="M12 21s-6-5.6-6-10.5a6 6 0 0112 0C18 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.2"/></svg><span>Reisen</span></button>
   <button data-tab="settings"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg><span>Einstellungen</span></button>
 </nav>
 <div id="sheetRoot"></div>

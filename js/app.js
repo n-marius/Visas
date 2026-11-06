@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 const KEY = 'passage.v1';
-const APP_VERSION = '2026-11-05.9';
+const APP_VERSION = '2026-11-06.1';
 const CSV_LIVE = 'https://raw.githubusercontent.com/ilyankou/passport-index-dataset/master/passport-index-tidy-iso2.csv';
 const CSV_LOCAL = 'data/passport-index-tidy-iso2.csv';
 const SCHENGEN = ['AT','BE','BG','HR','CZ','DK','EE','FI','FR','DE','GR','HU','IS','IT','LV','LI','LT','LU','MT','NL','NO','PL','PT','RO','SK','SI','ES','SE','CH'];
@@ -17,9 +17,9 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
 /* ---------- State ---------- */
-const DEF = () => ({ docs: [], s: { remind: { passport: 6, eta: 1, evisa: 2, visa: 2 }, cls: {}, mode: 'free', filter: 'all', push: { url: '', key: '' }, notified: {}, stamp: null } });
+const DEF = () => ({ docs: [], trips: {}, s: { tripView: 'both', tripPerson: 'm', tripAddT: false, remind: { passport: 6, eta: 1, evisa: 2, visa: 2 }, cls: {}, mode: 'free', filter: 'all', push: { url: '', key: '' }, notified: {}, stamp: null } });
 let st = DEF();
-try { const r = JSON.parse(localStorage.getItem(KEY)); if (r && Array.isArray(r.docs)) { st = { docs: r.docs, s: Object.assign(DEF().s, r.s) }; st.s.remind = Object.assign(DEF().s.remind, r.s?.remind); } } catch {}
+try { const r = JSON.parse(localStorage.getItem(KEY)); if (r && Array.isArray(r.docs)) { st = { docs: r.docs, trips: r.trips || {}, s: Object.assign(DEF().s, r.s) }; st.s.remind = Object.assign(DEF().s.remind, r.s?.remind); } } catch {}
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch {} pushSync(); };
 
 /* ---------- Datum ---------- */
@@ -187,6 +187,7 @@ function cmpClass(dest) {
   return 'grey';
 }
 function classOf(dest, mode) {
+  if (mode === 'trips') return tripVisited(dest) ? 'visited' : 'grey';
   if (mode === 'cmp') return cmpClass(dest);
   const pps = citizenships();
   if (mode === 'only') return docClass(dest, 'only');
@@ -194,21 +195,36 @@ function classOf(dest, mode) {
   return dc || baseClass(dest, pps);
 }
 
+/* ---------- Bereiste Länder (Marius / Agnessa) ---------- */
+const PERSONS = { m: 'Marius', a: 'Agnessa' };
+const trip = c => st.trips[c] || { m: false, a: false, t: false };
+function setTrip(c, f, on) {
+  const r = st.trips[c] ||= { m: false, a: false, t: false };
+  if (f === 't') { if (on) r.m = r.a = r.t = true; else r.t = false; } // gemeinsam -> automatisch bei beiden
+  else { r[f] = on; if (!on) r.t = false; }
+  if (!r.m && !r.a) delete st.trips[c];
+  save();
+}
+const tripVisited = c => { const r = st.trips[c]; if (!r) return false; const v = st.s.tripView; return v === 'm' ? r.m : v === 'a' ? r.a : v === 'tog' ? r.t : (r.m || r.a); };
+
 /* ---------- Karte ---------- */
 const MAXK = 80;
-let marksG, occP, occB = [], mapSvg, mapG, view = { k: 1, x: 0, y: 0 }, selected = null;
+const flagDone = new Set();
+let defsEl, marksG, occP, occB = [], mapSvg, mapG, view = { k: 1, x: 0, y: 0 }, selected = null;
 const LEG = {
   free: [['green', 'Frei bereisbar'], ['yellow', 'ETA / VoA'], ['orange', 'e-Visum'], ['dark', 'Visum'], ['red', 'Nicht regulär bereisbar'], ['grey', 'Keine Daten']],
   docs: [['green', 'Frei / Dokument vorhanden'], ['yellow', 'ETA / VoA'], ['orange', 'e-Visum'], ['dark', 'Visum'], ['red', 'Nicht regulär bereisbar']],
   only: [['green', 'Pass'], ['yellow', 'ETA / VoA'], ['orange', 'e-Visum'], ['dark', 'Visum'], ['grey', 'Kein Dokument']]
 };
-const COL = { green: 'var(--green)', yellow: 'var(--yellow)', orange: 'var(--orange)', dark: 'var(--dark)', red: 'var(--red)', grey: 'var(--grey)' };
+LEG.trips = [['visited', 'Bereist (Flagge)'], ['grey', 'Nicht bereist']];
+const COL = { visited: 'linear-gradient(90deg,#222 33%,#d22 33% 66%,#fc0 66%)', green: 'var(--green)', yellow: 'var(--yellow)', orange: 'var(--orange)', dark: 'var(--dark)', red: 'var(--red)', grey: 'var(--grey)' };
 function initMap() {
   const wrap = $('#mapWrap');
   const ns = 'http://www.w3.org/2000/svg';
   mapSvg = document.createElementNS(ns, 'svg');
   mapSvg.setAttribute('viewBox', `0 0 ${WORLD.w} ${WORLD.h}`);
   mapSvg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  defsEl = document.createElementNS(ns, 'defs'); mapSvg.appendChild(defsEl);
   mapG = document.createElementNS(ns, 'g');
   for (const [c, d] of Object.entries(WORLD.paths)) {
     const p = document.createElementNS(ns, 'path');
@@ -217,9 +233,8 @@ function initMap() {
   }
   mapSvg.appendChild(mapG);
   if (OCC) {
-    const defs = document.createElementNS(ns, 'defs');
-    defs.innerHTML = ['green', 'yellow', 'orange', 'dark', 'red', 'grey'].map(c => `<pattern id="h-${c}" width="1.6" height="1.6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="0.8" height="1.6" fill="${COL[c]}"/></pattern>`).join('');
-    mapSvg.prepend(defs);
+    const defs = defsEl;
+    defs.innerHTML += ['green', 'yellow', 'orange', 'dark', 'red', 'grey'].map(c => `<pattern id="h-${c}" width="1.6" height="1.6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="0.8" height="1.6" fill="${COL[c]}"/></pattern>`).join('');
     const mk = (d, cls) => { const e = document.createElementNS(ns, 'path'); e.setAttribute('d', d); e.setAttribute('class', cls); mapG.appendChild(e); return e; };
     occB = [mk(OCC.ua, 'occ'), mk(OCC.ge, 'occ')];
     occP = mk(OCC.ua + OCC.ge, 'occ');
@@ -290,17 +305,36 @@ function initMap() {
     apply();
   };
 }
+function ensureFlag(c) {
+  if (flagDone.has(c)) return; flagDone.add(c);
+  // Flagge auf das größte Teilgebiet (Festland) skalieren, Überseegebiete bekommen Kacheln
+  let best = null;
+  for (const d of (WORLD.paths[c] || '').split(/(?=M)/)) {
+    const e = document.createElementNS('http://www.w3.org/2000/svg', 'path'); e.setAttribute('d', d); mapG.appendChild(e);
+    const bb = e.getBBox(); e.remove();
+    if (!best || bb.width * bb.height > best.width * best.height) best = bb;
+  }
+  if (!best || !best.width) best = { x: 0, y: 0, width: 10, height: 7 };
+  defsEl.insertAdjacentHTML('beforeend', `<pattern id="f-${c}" patternUnits="userSpaceOnUse" x="${best.x}" y="${best.y}" width="${best.width}" height="${best.height}" viewBox="0 0 3 2" preserveAspectRatio="xMidYMid slice"><image href="flags/${c}.svg" width="3" height="2" preserveAspectRatio="none"/></pattern>`);
+}
 function paint() {
   if (!mapG) return;
   const mode = st.s.mode;
-  if (occP) { occP.setAttribute('fill', `url(#h-${classOf('RU', mode)})`); occB[0].setAttribute('fill', COL[classOf('UA', mode)]); occB[1].setAttribute('fill', COL[classOf('GE', mode)]); }
-  for (const p of [...mapG.children, ...(marksG ? marksG.children : [])]) if (p.dataset.c) p.setAttribute('class', 'c-' + classOf(p.dataset.c, mode) + (p.dataset.c === selected ? ' sel' : ''));
+  const trips = mode === 'trips';
+  if (occP) { for (const e of [occP, ...occB]) e.style.display = trips ? 'none' : ''; }
+  if (occP && !trips) { occP.setAttribute('fill', `url(#h-${classOf('RU', mode)})`); occB[0].setAttribute('fill', COL[classOf('UA', mode)]); occB[1].setAttribute('fill', COL[classOf('GE', mode)]); }
+  for (const p of [...mapG.children, ...(marksG ? marksG.children : [])]) if (p.dataset.c) { const k = classOf(p.dataset.c, mode); p.setAttribute('class', 'c-' + k + (p.dataset.c === selected ? ' sel' : '')); if (k === 'visited') { ensureFlag(p.dataset.c); p.style.fill = `url(#f-${p.dataset.c})`; } else p.style.fill = ''; }
   $$('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
+  $('#tripSeg').hidden = !trips; $$('#tripSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === st.s.tripView));
   if (mode === 'cmp') { const [a, b] = cmpPair(); const A = a ? cname(a) : 'A', B = b ? cname(b) : 'B'; LEG.cmp = [['green', `${A}: bessere Kategorie`], ['yellow', `${A}: längerer Aufenthalt`], ['grey', 'Gleich'], ['orange', `${B}: längerer Aufenthalt`], ['red', `${B}: bessere Kategorie`]]; }
   $('#legend').innerHTML = LEG[mode].map(([c, t]) => `<span><i style="background:${COL[c]}"></i>${t}</span>`).join('');
   const hint = $('#mapHint');
   const need = mode === 'cmp' ? 2 : 1;
-  if (mode !== 'only' && citizenships().length < need) {
+  if (trips) {
+    hint.hidden = !!Object.keys(st.trips).length;
+    hint.innerHTML = 'Noch keine bereisten Länder eingetragen. <button id="hintTrip">Reisen eintragen</button>';
+    if (!hint.hidden) $('#hintTrip').onclick = () => tab('trips');
+  } else if (mode !== 'only' && citizenships().length < need) {
     hint.hidden = false;
     hint.innerHTML = (mode === 'cmp' ? 'Für den Vergleich werden zwei Staatsbürgerschaften benötigt.' : 'Für die Reisefreiheit fehlt noch eine Staatsbürgerschaft.') + ' <button id="hintAdd">Pass eintragen</button>';
     $('#hintAdd').onclick = () => openForm(null, { type: 'passport' });
@@ -337,8 +371,13 @@ function openCountry(c) {
     <div style="text-align:center;padding:4px 0 14px"><div class="big-flag">${flag(c)}</div><div style="margin-top:8px"><span class="pill ${base}" id="cPill">${label[base]}</span></div></div>
     ${pps.length ? `<div class="group-title" style="margin-top:4px">Einreise je Staatsbürgerschaft (Einstufung änderbar)</div><div class="group">${rows}</div>` : '<div class="foot" style="margin:0 0 16px">Noch keine Staatsbürgerschaft hinterlegt.</div>'}
     ${docs.length ? `<div class="group-title">Meine Dokumente</div><div class="group">${docRows}</div>` : ''}
+    <div class="group-title">Bereist</div><div class="group plain">${[['m', 'Marius'], ['a', 'Agnessa'], ['t', 'gemeinsam']].map(([f, n]) => `<div class="row"><div class="meta"><b>${n}</b></div><div class="switch ${trip(c)[f] ? 'on' : ''}" data-trip="${f}"></div></div>`).join('')}</div>
     <button class="btn" id="cAdd">Eintrag für ${esc(cname(c))} hinzufügen</button>
     <div class="foot" style="margin-top:0">Angaben ohne Gewähr – vor Reiseantritt beim Auswärtigen Amt bzw. der Botschaft prüfen.</div>`);
+  $$('[data-trip]', s.sh).forEach(sw => sw.onclick = () => {
+    const f = sw.dataset.trip; setTrip(c, f, !trip(c)[f]);
+    $$('[data-trip]', s.sh).forEach(x => x.classList.toggle('on', !!trip(c)[x.dataset.trip])); renderTrips(); paint();
+  });
   $$('[data-ov]', s.sh).forEach(sel => sel.onchange = () => {
     const k = sel.dataset.ov + '>' + c;
     if (sel.value) st.s.cls[k] = sel.value; else delete st.s.cls[k];
@@ -417,6 +456,32 @@ function openForm(doc, preset = {}) {
     delete st.s.notified[d.id];
     save(); s.close(); render(); checkReminders();
   };
+}
+
+/* ---------- Reisen ---------- */
+function renderTrips() {
+  const root = $('#tripsBody'); if (!root) return;
+  const who = st.s.tripPerson, other = who === 'm' ? 'a' : 'm';
+  $$('#personSeg button').forEach(b => b.classList.toggle('on', b.dataset.p === who));
+  const list = Object.entries(st.trips).filter(([, r]) => r[who]).map(([c, r]) => ({ c, r })).sort((x, y) => cname(x.c).localeCompare(cname(y.c), 'de'));
+  const nT = list.filter(x => x.r.t).length;
+  root.innerHTML = `
+    <div class="search" style="margin:4px 0 10px"><input id="tSearch" type="search" placeholder="Land für ${PERSONS[who]} hinzufügen" autocomplete="off"><div class="suggest" id="tSug" hidden></div></div>
+    <div class="group plain"><div class="row"><div class="meta"><b>Neu als „gemeinsam“ eintragen</b></div><div class="switch ${st.s.tripAddT ? 'on' : ''}" id="tAddT"></div></div></div>
+    <div class="group-title">${PERSONS[who]} · ${list.length} Länder, davon ${nT} gemeinsam</div>
+    ${list.length ? `<div class="group plain">${list.map(({ c, r }) => `<div class="row"><span class="ico">${flag(c)}</span><div class="meta"><b>${esc(cname(c))}</b></div><span class="val" style="font-size:13px">gemeinsam</span><div class="switch ${r.t ? 'on' : ''}" data-t="${c}"></div><button class="chev" data-del="${c}" style="font-size:18px;padding:0 2px" aria-label="Entfernen">✕</button></div>`).join('')}</div>` : '<div class="empty"><div class="big">🌍</div><p>Noch keine Länder für ' + PERSONS[who] + '.</p></div>'}
+    <div class="foot">„Gemeinsam“ trägt das Land automatisch auch bei ${PERSONS[other]} ein.</div>`;
+  const inp = $('#tSearch', root), box = $('#tSug', root);
+  inp.oninput = () => {
+    const q = inp.value.trim().toLowerCase();
+    const hits = q ? ALL.filter(c => !(st.trips[c] && st.trips[c][who]) && cname(c).toLowerCase().includes(q)).slice(0, 6) : [];
+    box.hidden = !hits.length;
+    box.innerHTML = hits.map(c => `<button data-c="${c}">${flag(c)} ${esc(cname(c))}</button>`).join('');
+    $$('button', box).forEach(b => b.onclick = () => { setTrip(b.dataset.c, who, true); if (st.s.tripAddT) setTrip(b.dataset.c, 't', true); renderTrips(); paint(); });
+  };
+  $('#tAddT', root).onclick = () => { st.s.tripAddT = !st.s.tripAddT; save(); renderTrips(); };
+  $$('[data-t]', root).forEach(sw => sw.onclick = () => { setTrip(sw.dataset.t, 't', !trip(sw.dataset.t).t); renderTrips(); paint(); });
+  $$('[data-del]', root).forEach(b => b.onclick = () => { setTrip(b.dataset.del, who, false); renderTrips(); paint(); });
 }
 
 /* ---------- Liste ---------- */
@@ -549,10 +614,10 @@ function renderSettings() {
     try { for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); for (const k of await caches.keys()) if (k !== 'passage-data') await caches.delete(k); } catch {}
     location.reload();
   };
-  $('#bExp').onclick = () => shareFile(`passage-sicherung-${today()}.json`, 'application/json', JSON.stringify({ docs: st.docs, s: st.s }, null, 2));
+  $('#bExp').onclick = () => shareFile(`passage-sicherung-${today()}.json`, 'application/json', JSON.stringify({ docs: st.docs, trips: st.trips, s: st.s }, null, 2));
   $('#bImp').onclick = () => $('#fImp').click();
   $('#fImp').onchange = async e => {
-    try { const j = JSON.parse(await e.target.files[0].text()); if (!Array.isArray(j.docs)) throw 0; if (!confirm(`${j.docs.length} Einträge importieren? Bestehende Daten werden ersetzt.`)) return; st = { docs: j.docs, s: Object.assign(DEF().s, j.s) }; save(); render(); } catch { alert('Datei nicht lesbar.'); }
+    try { const j = JSON.parse(await e.target.files[0].text()); if (!Array.isArray(j.docs)) throw 0; if (!confirm(`${j.docs.length} Einträge importieren? Bestehende Daten werden ersetzt.`)) return; st = { docs: j.docs, trips: j.trips || {}, s: Object.assign(DEF().s, j.s) }; save(); render(); } catch { alert('Datei nicht lesbar.'); }
   };
 }
 
@@ -562,9 +627,11 @@ function tab(t) {
   $$('#tabbar button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   if (t === 'map') requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
 }
-function render() { paint(); renderList(); renderSettings(); }
+function render() { paint(); renderList(); renderTrips(); renderSettings(); }
 function wire() {
   $$('#tabbar button').forEach(b => b.onclick = () => tab(b.dataset.tab));
+  $$('#personSeg button').forEach(b => b.onclick = () => { st.s.tripPerson = b.dataset.p; save(); renderTrips(); });
+  $$('#tripSeg button').forEach(b => b.onclick = () => { st.s.tripView = b.dataset.v; save(); paint(); });
   $$('#modeSeg button').forEach(b => b.onclick = () => { st.s.mode = b.dataset.mode; save(); paint(); });
   $$('#filterSeg button').forEach(b => b.onclick = () => { st.s.filter = b.dataset.f; save(); renderList(); });
   $('#addBtn').onclick = () => openForm(null);
@@ -581,7 +648,7 @@ function wire() {
 /* ---------- Start ---------- */
 (async function () {
   wire();
-  renderList(); renderSettings();
+  renderList(); renderTrips(); renderSettings();
   try { await loadData(); initMap(); render(); } catch (e) { $('#mapWrap').insertAdjacentHTML('afterbegin', '<div class="hint">Kartendaten konnten nicht geladen werden.</div>'); console.error(e); }
   checkReminders();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkReminders(); renderList(); } });

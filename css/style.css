@@ -103,4 +103,5 @@ button{border:0;background:none;cursor:pointer;padding:0}
 .ovsel{border:0;background:#f2f2f7;border-radius:8px;padding:5px 6px;font-size:13px;color:var(--accent);max-width:112px;-webkit-appearance:none;appearance:none}
 .seg button{padding:6px 2px}
 .vnote{display:block;margin-top:2px;color:#8a5a00!important}.vnote a{color:var(--accent)}
-#modeSeg button{font-size:12px}
+#modeSeg{overflow-x:auto;scrollbar-width:none}#modeSeg::-webkit-scrollbar{display:none}#modeSeg button{font-size:12px;flex:none;padding:6px 12px}
+.c-visited{fill:#fff}

@@ -13,6 +13,8 @@ Statische PWA (kein Build, kein Server). Alle Daten bleiben lokal im Gerät.
 - **Erinnerungen** X Monate vor Ablauf (je Dokumenttyp einstellbar): Mitteilung/Badge beim Öffnen, **Kalender-Export (.ics)** mit Alarmen (funktioniert auf dem iPhone ohne Server), optional echter Server-Push.
 - Sicherung/Import als JSON (Einstellungen).
 
+- **Reisen** (Tab): bereiste Länder für Marius und Agnessa getrennt; „gemeinsam“ trägt das Land automatisch bei beiden ein. Kartenansicht „Bereist“ (Marius / Agnessa / Beide / Gemeinsam) füllt bereiste Länder mit ihrer Flagge (Flaggen: country-flag-icons, MIT).
+
 ## Datenquellen
 - Einreisebestimmungen: [Passport Index Dataset](https://github.com/ilyankou/passport-index-dataset) (`passport-index-tidy-iso2.csv`). Die App ruft die Datei live ab (alle 7 Tage bzw. per Knopf in den Einstellungen), Fallback: eingebauter Snapshot `data/`. Zusätzlich aktualisiert `.github/workflows/update-data.yml` den Snapshot wöchentlich.
 - Zuordnung: Zahl/„visa free“/eigener Staat → grün; ETA und Visa on arrival → gelb („ETA/VoA“); e-Visa → orange; „visa required“ → dunkelorange; „no admission“ → rot. Die Quelle unterscheidet bei e-Visa nicht zwischen schnell und aufwendig, daher starten alle orange; je Land und Pass lässt sich das im Länderdetail manuell ändern (lokal gespeichert). Das Passport Index Dataset ist ein Community-Datensatz, **keine amtliche Quelle**; Aktualität einzelner Einträge ist nicht garantiert.
