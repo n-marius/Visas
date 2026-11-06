@@ -271,7 +271,7 @@ function initMap() {
     if (marksG) { const px = w / WORLD.w, r = (3.4 / px / view.k).toFixed(3); for (const m of marksG.children) { m.setAttribute('r', r); m.style.display = Number(m.dataset.dim) * px * view.k > 16 ? 'none' : ''; } }
     if (cityG) {
       const px = w / WORLD.w, r = (2.3 * st.s.cityScale / px / view.k).toFixed(3), key = r;
-      if (key !== lastCityR) { lastCityR = key; for (const e of cityG.children) e.setAttribute('r', e.classList.contains('cityhalo') ? (r * 3.4).toFixed(3) : r); }
+      if (key !== lastCityR) { lastCityR = key; for (const e of cityG.children) e.setAttribute('r', e.classList.contains('cityhalo') ? (r * 2.8).toFixed(3) : r); }
     }
     mapSvg.style.setProperty('--sw', (0.6 * WORLD.w / w / view.k).toFixed(3));
     mapSvg.style.transformOrigin = '0 0';
