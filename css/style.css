@@ -105,3 +105,20 @@ button{border:0;background:none;cursor:pointer;padding:0}
 .vnote{display:block;margin-top:2px;color:#8a5a00!important}.vnote a{color:var(--accent)}
 #modeSeg{overflow-x:auto;scrollbar-width:none}#modeSeg::-webkit-scrollbar{display:none}#modeSeg button{font-size:12px;flex:none;padding:6px 12px}
 .c-visited{fill:#fff}
+
+/* Städte-Punkte */
+.mapwrap circle.cityhalo{stroke:none;fill:rgba(255,205,64,.42);transform-box:fill-box;transform-origin:center;animation:tw 3s ease-in-out infinite;pointer-events:auto}
+.mapwrap circle.citycore{stroke:#b57b00;stroke-width:calc(var(--sw,1) * .7);fill:#fff4c4;animation:ts 3s ease-in-out infinite;pointer-events:none}
+@keyframes tw{0%,100%{opacity:.12;transform:scale(.55)}50%{opacity:1;transform:scale(1.2)}}
+@keyframes ts{0%,100%{opacity:.8}50%{opacity:1}}
+@supports (color: color(display-p3 1 1 1)){
+  .mapwrap circle.cityhalo{fill:color(display-p3 1 .78 .12 / .5)}
+  .mapwrap circle.citycore{fill:color(display-p3 1 .96 .7)}
+}
+@media (dynamic-range: high){
+  svg.hdr circle.cityhalo{mix-blend-mode:plus-lighter;fill:color(display-p3 1 .86 .3 / .9)}
+  svg.hdr circle.citycore{fill:color(display-p3 1 1 .85);filter:brightness(1.5) saturate(1.2)}
+}
+.tip{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:4;background:rgba(28,28,30,.86);color:#fff;font-weight:600;padding:8px 14px;border-radius:18px;font-size:15px;box-shadow:0 4px 16px rgba(0,0,0,.25);max-width:70%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.zoom button.off{opacity:.4}
+@media (prefers-reduced-motion:reduce){.mapwrap circle.cityhalo,.mapwrap circle.citycore{animation:none}}

@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 const KEY = 'passage.v1';
-const APP_VERSION = '2026-11-06.1';
+const APP_VERSION = '2026-11-06.2';
 const CSV_LIVE = 'https://raw.githubusercontent.com/ilyankou/passport-index-dataset/master/passport-index-tidy-iso2.csv';
 const CSV_LOCAL = 'data/passport-index-tidy-iso2.csv';
 const SCHENGEN = ['AT','BE','BG','HR','CZ','DK','EE','FI','FR','DE','GR','HU','IS','IT','LV','LI','LT','LU','MT','NL','NO','PL','PT','RO','SK','SI','ES','SE','CH'];
@@ -17,7 +17,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
 /* ---------- State ---------- */
-const DEF = () => ({ docs: [], trips: {}, s: { tripView: 'both', tripPerson: 'm', tripAddT: false, remind: { passport: 6, eta: 1, evisa: 2, visa: 2 }, cls: {}, mode: 'free', filter: 'all', push: { url: '', key: '' }, notified: {}, stamp: null } });
+const DEF = () => ({ docs: [], trips: {}, s: { cities: true, cityScale: 1, cityHdr: true, tripView: 'both', tripPerson: 'm', tripAddT: false, remind: { passport: 6, eta: 1, evisa: 2, visa: 2 }, cls: {}, mode: 'free', filter: 'all', push: { url: '', key: '' }, notified: {}, stamp: null } });
 let st = DEF();
 try { const r = JSON.parse(localStorage.getItem(KEY)); if (r && Array.isArray(r.docs)) { st = { docs: r.docs, trips: r.trips || {}, s: Object.assign(DEF().s, r.s) }; st.s.remind = Object.assign(DEF().s.remind, r.s?.remind); } } catch {}
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch {} pushSync(); };
@@ -79,7 +79,7 @@ function cdesc(a) {
 }
 
 /* ---------- Visa-Daten ---------- */
-let V = {}, OVR = { manualRestricted: [], byPassport: {} }, OCC = null, VER = {}, WORLD = null, ALL = [], dataInfo = { src: '', stamp: null, snap: null };
+let V = {}, OVR = { manualRestricted: [], byPassport: {} }, OCC = null, VER = {}, CITIES = [], WORLD = null, ALL = [], dataInfo = { src: '', stamp: null, snap: null };
 function setVisa(text) {
   const out = {};
   const lines = text.split('\n');
@@ -91,13 +91,15 @@ function setVisa(text) {
   V = out;
 }
 async function loadData() {
-  const [w, o, m, oc, ver] = await Promise.all([
+  const [w, o, m, oc, ver, cit] = await Promise.all([
     fetch('data/world.json').then(r => r.json()),
     fetch('data/overrides.json').then(r => r.json()).catch(() => OVR),
     fetch('data/meta.json').then(r => r.json()).catch(() => ({})),
     fetch('data/occupied.json').then(r => r.json()).catch(() => null),
-    fetch('data/verified.json').then(r => r.json()).catch(() => ({ e: {} }))
+    fetch('data/verified.json').then(r => r.json()).catch(() => ({ e: {} })),
+    fetch('data/cities.json').then(r => r.json()).catch(() => ({ pts: [] }))
   ]);
+  CITIES = cit.pts || [];
   OCC = oc; VER = ver.e || {};
   WORLD = w; OVR = o; dataInfo.snap = m.snapshot || null;
   let text = null;
@@ -210,7 +212,7 @@ const tripVisited = c => { const r = st.trips[c]; if (!r) return false; const v 
 /* ---------- Karte ---------- */
 const MAXK = 80;
 const flagDone = new Set();
-let defsEl, marksG, occP, occB = [], mapSvg, mapG, view = { k: 1, x: 0, y: 0 }, selected = null;
+let lastCityR = '', cityG, defsEl, marksG, occP, occB = [], mapSvg, mapG, view = { k: 1, x: 0, y: 0 }, selected = null;
 const LEG = {
   free: [['green', 'Frei bereisbar'], ['yellow', 'ETA / VoA'], ['orange', 'e-Visum'], ['dark', 'Visum'], ['red', 'Nicht regulär bereisbar'], ['grey', 'Keine Daten']],
   docs: [['green', 'Frei / Dokument vorhanden'], ['yellow', 'ETA / VoA'], ['orange', 'e-Visum'], ['dark', 'Visum'], ['red', 'Nicht regulär bereisbar']],
@@ -248,6 +250,17 @@ function initMap() {
     marksG.appendChild(m);
   }
   mapG.appendChild(marksG);
+  // Funkelnde Städtepunkte
+  cityG = document.createElementNS(ns, 'g');
+  CITIES.forEach(([n, x, y], i) => {
+    const mk = cls => { const e = document.createElementNS(ns, 'circle'); e.setAttribute('cx', x); e.setAttribute('cy', y); e.setAttribute('class', cls); e.dataset.n = i; return e; };
+    const halo = mk('cityhalo'), core = mk('citycore');
+    const d = (2.2 + Math.random() * 2.4).toFixed(2), dl = (-Math.random() * 4).toFixed(2);
+    halo.style.animationDuration = d + 's'; halo.style.animationDelay = dl + 's';
+    core.style.animationDuration = d + 's'; core.style.animationDelay = dl + 's';
+    cityG.append(halo, core);
+  });
+  mapG.appendChild(cityG);
   // Gesten
   const ptrs = new Map(); let moved = false, startDist = 0, startK = 1, down = null;
   const size = () => { const r = wrap.getBoundingClientRect(); return [r.width, r.height]; };
@@ -256,6 +269,10 @@ function initMap() {
     view.k = Math.min(MAXK, Math.max(1, view.k));
     view.x = Math.min(0, Math.max(-w * (view.k - 1), view.x)); view.y = Math.min(0, Math.max(-h * (view.k - 1), view.y));
     if (marksG) { const px = w / WORLD.w, r = (3.4 / px / view.k).toFixed(3); for (const m of marksG.children) { m.setAttribute('r', r); m.style.display = Number(m.dataset.dim) * px * view.k > 16 ? 'none' : ''; } }
+    if (cityG) {
+      const px = w / WORLD.w, r = (2.3 * st.s.cityScale / px / view.k).toFixed(3), key = r;
+      if (key !== lastCityR) { lastCityR = key; for (const e of cityG.children) e.setAttribute('r', e.classList.contains('cityhalo') ? (r * 3.4).toFixed(3) : r); }
+    }
     mapSvg.style.setProperty('--sw', (0.6 * WORLD.w / w / view.k).toFixed(3));
     mapSvg.style.transformOrigin = '0 0';
     mapSvg.style.transform = `translate(${view.x}px,${view.y}px) scale(${view.k})`;
@@ -286,7 +303,8 @@ function initMap() {
     if (!ptrs.has(e.pointerId)) return; ptrs.delete(e.pointerId);
     if (!moved && e.type === 'pointerup') {
       const t = document.elementFromPoint(e.clientX, e.clientY);
-      if (t && t.dataset && t.dataset.c) openCountry(t.dataset.c);
+      if (t && t.dataset && t.dataset.n != null && CITIES[t.dataset.n]) showCity(Number(t.dataset.n));
+      else if (t && t.dataset && t.dataset.c) openCountry(t.dataset.c);
     }
   };
   wrap.addEventListener('pointerup', up); wrap.addEventListener('pointercancel', up);
@@ -296,6 +314,11 @@ function initMap() {
   $('#zOut').onclick = () => zoomAt(1 / 1.6, ...mid());
   $('#zReset').onclick = () => { view = { k: 1, x: 0, y: 0 }; apply(); };
   window.addEventListener('resize', apply); apply();
+  window.__mapZoomPt = (x, y, k) => {
+    const [w, h] = size(), sc = Math.min(w / WORLD.w, h / WORLD.h), ox = (w - WORLD.w * sc) / 2, oy = (h - WORLD.h * sc) / 2;
+    view.k = k; view.x = w / 2 - (ox + x * sc) * k; view.y = h / 2 - (oy + y * sc) * k; apply();
+  };
+  $('#zCity').onclick = () => { st.s.cities = !st.s.cities; save(); paint(); renderSettings(); };
   window.__mapZoomTo = (c) => {
     const p = mapG.querySelector(`path[data-c="${c}"]`); if (!p) return;
     const [w, h] = size(), bb = p.getBBox();
@@ -317,9 +340,17 @@ function ensureFlag(c) {
   if (!best || !best.width) best = { x: 0, y: 0, width: 10, height: 7 };
   defsEl.insertAdjacentHTML('beforeend', `<pattern id="f-${c}" patternUnits="userSpaceOnUse" x="${best.x}" y="${best.y}" width="${best.width}" height="${best.height}" viewBox="0 0 3 2" preserveAspectRatio="xMidYMid slice"><image href="flags/${c}.svg" width="3" height="2" preserveAspectRatio="none"/></pattern>`);
 }
+let tipTimer;
+function showCity(i, zoom) {
+  const c = CITIES[i]; if (!c) return;
+  if (zoom) window.__mapZoomPt(c[1], c[2], 14);
+  const t = $('#cityTip'); t.textContent = '✦ ' + c[0]; t.hidden = false; clearTimeout(tipTimer); tipTimer = setTimeout(() => { t.hidden = true; }, 3500);
+}
 function paint() {
   if (!mapG) return;
   const mode = st.s.mode;
+  if (cityG) { cityG.style.display = st.s.cities ? '' : 'none'; mapSvg.classList.toggle('hdr', !!st.s.cityHdr); lastCityR = ''; window.dispatchEvent(new Event('resize')); }
+  $('#zCity').classList.toggle('off', !st.s.cities);
   const trips = mode === 'trips';
   if (occP) { for (const e of [occP, ...occB]) e.style.display = trips ? 'none' : ''; }
   if (occP && !trips) { occP.setAttribute('fill', `url(#h-${classOf('RU', mode)})`); occB[0].setAttribute('fill', COL[classOf('UA', mode)]); occB[1].setAttribute('fill', COL[classOf('GE', mode)]); }
@@ -569,6 +600,12 @@ function renderSettings() {
       <button class="row" id="bIcs"><div class="meta"><b>Kalender-Erinnerungen (.ics)</b><small>Funktioniert zuverlässig auf dem iPhone, auch ohne Server</small></div><span class="chev">›</span></button>
     </div>
     <div class="foot">Ohne eigenen Push-Server erscheinen Mitteilungen nur, wenn die App geöffnet wird. Für echte Hintergrund-Push: siehe unten und README.</div>
+    <div class="group-title">Städte-Punkte auf der Karte</div>
+    <div class="group plain">
+      <div class="row"><div class="meta"><b>Funkelnde Punkte anzeigen</b><small>${CITIES.length} Orte · Antippen zeigt den Namen, Suche findet sie</small></div><div class="switch ${st.s.cities ? 'on' : ''}" id="tCity"></div></div>
+      <div class="row"><div class="meta"><b>Größe</b></div><div class="stepper"><button data-cs="-1">−</button><span>${Math.round(st.s.cityScale * 100)} %</span><button data-cs="1">+</button></div></div>
+      <div class="row"><div class="meta"><b>HDR-Glanz</b><small>Nur auf HDR-fähigen Displays; erweiterter Farbraum, zusätzlich aufgehellter Schein</small></div><div class="switch ${st.s.cityHdr ? 'on' : ''}" id="tHdr"></div></div>
+    </div>
     <div class="group-title">Länder-Einstufung</div>
     <div class="group plain">
       <div class="row"><div class="meta"><b>Gelb · ETA / VoA</b><small>einfacher Online-Antrag mit schneller Erteilung oder Visum bei Ankunft</small></div></div>
@@ -610,6 +647,9 @@ function renderSettings() {
   $('#pUrl').onchange = e => { st.s.push.url = e.target.value.trim(); save(); };
   $('#pKey').onchange = e => { st.s.push.key = e.target.value.trim(); save(); };
   $('#bPush').onclick = async () => { try { st.s.push.url = $('#pUrl').value.trim(); st.s.push.key = $('#pKey').value.trim(); await pushSubscribe(); alert('Push aktiviert.'); } catch (e) { alert('Fehler: ' + e.message); } };
+  $('#tCity').onclick = () => { st.s.cities = !st.s.cities; save(); paint(); renderSettings(); };
+  $('#tHdr').onclick = () => { st.s.cityHdr = !st.s.cityHdr; save(); paint(); renderSettings(); };
+  $$('[data-cs]', root).forEach(b => b.onclick = () => { st.s.cityScale = Math.min(4, Math.max(0.5, +(st.s.cityScale + 0.25 * Number(b.dataset.cs)).toFixed(2))); save(); paint(); renderSettings(); });
   $('#bReload').onclick = async () => {
     try { for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); for (const k of await caches.keys()) if (k !== 'passage-data') await caches.delete(k); } catch {}
     location.reload();
@@ -638,10 +678,11 @@ function wire() {
   const inp = $('#mapSearch'), box = $('#mapSuggest');
   inp.oninput = () => {
     const q = inp.value.trim().toLowerCase();
-    const hits = q ? ALL.filter(c => cname(c).toLowerCase().includes(q)).slice(0, 6) : [];
-    box.hidden = !hits.length;
-    box.innerHTML = hits.map(c => `<button data-c="${c}">${flag(c)} ${esc(cname(c))}</button>`).join('');
-    $$('button', box).forEach(b => b.onclick = () => { box.hidden = true; inp.value = ''; inp.blur(); openCountry(b.dataset.c); });
+    const hits = q ? ALL.filter(c => cname(c).toLowerCase().includes(q)).slice(0, 5) : [];
+    const ch = q ? CITIES.map((c, i) => [c[0], i]).filter(([n]) => n.toLowerCase().includes(q)).slice(0, 5) : [];
+    box.hidden = !hits.length && !ch.length;
+    box.innerHTML = hits.map(c => `<button data-c="${c}">${flag(c)} ${esc(cname(c))}</button>`).join('') + ch.map(([n, i]) => `<button data-city="${i}">✦ ${esc(n)}</button>`).join('');
+    $$('button', box).forEach(b => b.onclick = () => { box.hidden = true; inp.value = ''; inp.blur(); if (b.dataset.city != null) showCity(Number(b.dataset.city), true); else openCountry(b.dataset.c); });
   };
 }
 
