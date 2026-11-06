@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import * as topo from 'topojson-client';
 import iso from 'i18n-iso-countries';
 import { geo, proj, path, OUT } from './proj.mjs';
-import { geoPath } from 'd3-geo';
+import { geoPath, geoCentroid } from 'd3-geo';
 const t10 = JSON.parse(readFileSync('node_modules/world-atlas/countries-10m.json'));
 const ids50 = new Set(geo.map(f => f.id));
 const add10 = topo.feature(t10, t10.objects.countries).features.filter(f => f.id && !ids50.has(f.id) && ['292', '798'].includes(String(f.id)));
@@ -14,13 +14,25 @@ const code = f => {
   return { Kosovo: 'XK', 'N. Cyprus': 'CY', Somaliland: 'SO' }[f.properties.name];
 };
 const out = {}, marks = {}, feats = {};
-for (const f of [...geo, ...add10]) {
+// Natural Earth ordnet die Krim Russland zu; hier wird sie (völkerrechtlich korrekt) der Ukraine zugeschlagen.
+const inCrimea = ([lon, lat]) => lon > 32.3 && lon < 36.9 && lat > 44.3 && lat < 46.3;
+function splitCrimea(f) {
+  if (f.geometry.type !== 'MultiPolygon') return [f, null];
+  const keep = [], cr = [];
+  for (const poly of f.geometry.coordinates) (inCrimea(geoCentroid({ type: 'Polygon', coordinates: poly })) ? cr : keep).push(poly);
+  console.log('Krim: Teilflächen von RU nach UA verschoben:', cr.length);
+  return [{ ...f, geometry: { ...f.geometry, coordinates: keep } }, cr.length ? { type: 'Feature', id: '804', properties: { name: 'Krim' }, geometry: { type: 'MultiPolygon', coordinates: cr } } : null];
+}
+let crimea = null;
+for (let f of [...geo, ...add10]) {
   const c = code(f);
+  if (c === 'RU') [f, crimea] = splitCrimea(f);
   if (!c) { console.warn('skip', f.properties.name, f.id); continue; }
   const d = path(f); if (!d) continue;
   out[c] = (out[c] || '') + d;
   (feats[c] ||= []).push(f);
 }
+if (crimea) { out.UA += path(crimea); feats.UA.push(crimea); }
 const gp = geoPath(proj);
 for (const [c, fs] of Object.entries(feats)) {
   const area = fs.reduce((a, f) => a + gp.area(f), 0);
