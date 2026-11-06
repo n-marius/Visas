@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 const KEY = 'passage.v1';
-const APP_VERSION = '2026-11-06.2';
+const APP_VERSION = '2026-11-06.3';
 const CSV_LIVE = 'https://raw.githubusercontent.com/ilyankou/passport-index-dataset/master/passport-index-tidy-iso2.csv';
 const CSV_LOCAL = 'data/passport-index-tidy-iso2.csv';
 const SCHENGEN = ['AT','BE','BG','HR','CZ','DK','EE','FI','FR','DE','GR','HU','IS','IT','LV','LI','LT','LU','MT','NL','NO','PL','PT','RO','SK','SI','ES','SE','CH'];
@@ -253,12 +253,16 @@ function initMap() {
   // Funkelnde Städtepunkte
   cityG = document.createElementNS(ns, 'g');
   CITIES.forEach(([n, x, y], i) => {
-    const mk = cls => { const e = document.createElementNS(ns, 'circle'); e.setAttribute('cx', x); e.setAttribute('cy', y); e.setAttribute('class', cls); e.dataset.n = i; return e; };
-    const halo = mk('cityhalo'), core = mk('citycore');
-    const d = (2.2 + Math.random() * 2.4).toFixed(2), dl = (-Math.random() * 4).toFixed(2);
-    halo.style.animationDuration = d + 's'; halo.style.animationDelay = dl + 's';
-    core.style.animationDuration = d + 's'; core.style.animationDelay = dl + 's';
-    cityG.append(halo, core);
+    const g = document.createElementNS(ns, 'g'); g.dataset.x = x; g.dataset.y = y;
+    const star = document.createElementNS(ns, 'path'); star.setAttribute('class', 'spark');
+    star.setAttribute('d', 'M0,-1 Q.09,-.09 1,0 Q.09,.09 0,1 Q-.09,.09 -1,0 Q-.09,-.09 0,-1Z');
+    const star2 = document.createElementNS(ns, 'path'); star2.setAttribute('class', 'spark spark2');
+    star2.setAttribute('d', 'M0,-.62 Q.07,-.07 .62,0 Q.07,.07 0,.62 Q-.07,.07 -.62,0 Q-.07,-.07 0,-.62Z');
+    const core = document.createElementNS(ns, 'circle'); core.setAttribute('class', 'citycore'); core.setAttribute('r', '.17');
+    const hit = document.createElementNS(ns, 'circle'); hit.setAttribute('class', 'cityhit'); hit.setAttribute('r', '1.3'); hit.dataset.n = i;
+    const d = (1.6 + Math.random() * 2.2).toFixed(2), dl = (-Math.random() * 4).toFixed(2);
+    for (const e of [star, star2, core]) { e.style.animationDuration = d + 's'; e.style.animationDelay = dl + 's'; }
+    g.append(star, star2, core, hit); cityG.appendChild(g);
   });
   mapG.appendChild(cityG);
   // Gesten
@@ -270,8 +274,8 @@ function initMap() {
     view.x = Math.min(0, Math.max(-w * (view.k - 1), view.x)); view.y = Math.min(0, Math.max(-h * (view.k - 1), view.y));
     if (marksG) { const px = w / WORLD.w, r = (3.4 / px / view.k).toFixed(3); for (const m of marksG.children) { m.setAttribute('r', r); m.style.display = Number(m.dataset.dim) * px * view.k > 16 ? 'none' : ''; } }
     if (cityG) {
-      const px = w / WORLD.w, r = (2.3 * st.s.cityScale / px / view.k).toFixed(3), key = r;
-      if (key !== lastCityR) { lastCityR = key; for (const e of cityG.children) e.setAttribute('r', e.classList.contains('cityhalo') ? (r * 2.8).toFixed(3) : r); }
+      const px = w / WORLD.w, R = (5 * st.s.cityScale / px / view.k).toFixed(3);
+      if (R !== lastCityR) { lastCityR = R; for (const g of cityG.children) g.setAttribute('transform', `translate(${g.dataset.x} ${g.dataset.y}) scale(${R})`); }
     }
     mapSvg.style.setProperty('--sw', (0.6 * WORLD.w / w / view.k).toFixed(3));
     mapSvg.style.transformOrigin = '0 0';
